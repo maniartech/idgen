@@ -19,4 +19,4 @@ OPTIONS:
     -c --count <num>  Number of times the ids need to be printed (Default 1)
 ```
 
-Copoyright © 2021 Mohamed Aamir Maniar. All rights reserved.
+Copoyright © 2021 ManiarTech. All rights reserved.
