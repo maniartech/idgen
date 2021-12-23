@@ -8,8 +8,11 @@ pub fn parse_n_process() {
     let mut count = 1;
     let mut help = false;
     let mut version = false;
+    let mut len: Option<usize> = None;
 
-    args.iter().enumerate().for_each(|(i, arg)| {
+    let mut lastcmd = String::new();
+
+    args.iter().enumerate().for_each(|(_, arg)| {
         if arg == "-h" || arg == "--help" {
             help = true;
         } else if arg == "-v" || arg == "--version" {
@@ -20,11 +23,17 @@ pub fn parse_n_process() {
             format = IDFormat::URN
         } else if arg == "-o" || arg == "--objectid" {
             format = IDFormat::OID
-        } else if arg == "-c" || arg == "--count" {
-            if i < args.len() - 1 {
-                count = args[i + 1].parse::<i32>().unwrap_or(1);
-            }
+        } else if arg == "-n" || arg == "--nano" {
+            format = IDFormat::NanoID
         }
+
+        if lastcmd == "-c" || lastcmd == "--count" {
+            count = arg.parse::<i32>().unwrap_or(1);
+        } else if lastcmd == "-n" || lastcmd == "--nano" {
+            len = Some(arg.parse::<usize>().unwrap_or(21));
+        }
+
+        lastcmd = arg.clone();
     });
 
     if help {
@@ -35,12 +44,12 @@ pub fn parse_n_process() {
         return print_version();
     }
 
-    print_uuid(format, count);
+    print_uuid(format, len, count);
 }
 
-fn print_uuid(id_format: IDFormat, count: i32) {
+fn print_uuid(id_format: IDFormat, len: Option<usize>, count: i32) {
     for _ in 0..count {
-        println!("{}", new_id(&id_format));
+        println!("{}", new_id(&id_format, len));
     }
 }
 
@@ -52,8 +61,9 @@ fn print_version() {
 
 /// Prints the help message!
 fn print_help() {
-    let help = String::from(
-        "UUID Generator Version 0.7.0
+    const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+    let help = format!(
+        "UUID Generator Version {}
   Mohamed Aamir Maniar - https://www.linkedin.com/in/aamironline/
   Generates and prints the UUID (or ObjectID) for the specified number of times.
 
@@ -63,15 +73,17 @@ fn print_help() {
   FLAGS:
       -h --help       Prints the help information
       -v --version    Prints the version information
-      -s --simple     Generates a simple UUID-v4 without hyphen
-      -u --urn        Generates the UUID-v4 with URN signature
-      -o --objectid   Generates the sequential mongodb ObjectId
-      -d --hyphen     Generates the hyphened version of UUID-v4 (Default)
 
   OPTIONS:
-      -c --count <num>  Number of times the ids need to be printed (Default 1)
+      -s --simple           Generates a simple UUID-v4 without hyphen
+      -u --urn              Generates the UUID-v4 with URN signature
+      -o --objectid         Generates the sequential mongodb ObjectId
+      -d --hyphen           Generates the hyphened version of UUID-v4 (Default)
+      -n --nanoid   <num?>  Generates the nanoid with the specified length (Default: 21)
+      -c --count    <num>   Number of times the ids need to be printed (Default 1)
   ",
+        VERSION
     )
     .replace("\n  ", "\n");
-    print!("{}", help);
+    println!("{}", help);
 }
