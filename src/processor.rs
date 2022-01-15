@@ -63,12 +63,12 @@ fn print_version() {
 fn print_help() {
     const VERSION: &'static str = env!("CARGO_PKG_VERSION");
     let help = format!(
-        "UUID Generator Version {}
+        "ID Generator Version {}
   Mohamed Aamir Maniar - https://www.linkedin.com/in/aamironline/
   Generates and prints the UUID (or ObjectID) for the specified number of times.
 
   USAGE:
-      uuidgen [OPTIONS]
+      idgen [OPTIONS]
 
   FLAGS:
       -h --help       Prints the help information

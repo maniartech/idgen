@@ -1,8 +1,8 @@
 [package]
-name = "uuidgen"
-version = "1.1.0"
+name = "idgen"
+version = "1.2.0"
 authors = ["Mohamed Aamir Maniar <aamir.maniar@maniartech.com>"]
-edition = "2018"
+edition = "2022"
 
 [dependencies]
 uuid = { version = "0.8", features = ["serde", "v4"] }
