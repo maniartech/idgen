@@ -9,6 +9,7 @@ pub fn parse_n_process() {
     let mut help = false;
     let mut version = false;
     let mut len: Option<usize> = None;
+    let mut prefix = "";
 
     let mut lastcmd = String::new();
 
@@ -31,10 +32,14 @@ pub fn parse_n_process() {
             count = arg.parse::<i32>().unwrap_or(1);
         } else if lastcmd == "-n" || lastcmd == "--nano" {
             len = Some(arg.parse::<usize>().unwrap_or(21));
+        } else if lastcmd == "-p" || lastcmd == "--prefix" {
+            prefix = arg;
         }
 
         lastcmd = arg.clone();
     });
+
+    print_banner();
 
     if help {
         return print_help();
@@ -44,12 +49,13 @@ pub fn parse_n_process() {
         return print_version();
     }
 
-    print_uuid(format, len, count);
+    print_uuid(format, len, count, prefix);
+    println!("");
 }
 
-fn print_uuid(id_format: IDFormat, len: Option<usize>, count: i32) {
+fn print_uuid(id_format: IDFormat, len: Option<usize>, count: i32, prefix: &str) {
     for _ in 0..count {
-        println!("{}", new_id(&id_format, len));
+        println!("{}{}", prefix, new_id(&id_format, len));
     }
 }
 
@@ -86,4 +92,17 @@ fn print_help() {
     )
     .replace("\n  ", "\n");
     println!("{}", help);
+}
+
+fn print_banner() {
+    // represents the multiline banner text
+    let banner = r#"
+ _     _
+(_) __| | __ _  ___ _ __
+| |/ _` |/ _` |/ _ \ '_ \
+| | (_| | (_| |  __/ | | |
+|_|\__,_|\__, |\___|_| |_|
+         |___/
+"#;
+    println!("{}", banner);
 }
