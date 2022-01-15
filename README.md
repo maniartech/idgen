@@ -1,15 +1,15 @@
-# uuidgen
+# idgen
 
 Written in RUST this tiny utility (`< 200kb`) quickly generates UUID(v4) and MongoDB ObjectIDs. Now supports NonoIDs too. This library is useful during development and testing when you need to generate UUIDs and Object for your entities.
 
 
 ```sh
-UUID Generator Version 1.1.0
+ID Generator Version 1.1.0
 Mohamed Aamir Maniar - https://www.linkedin.com/in/aamironline/
 Generates and prints the UUID (or ObjectID) for the specified number of times.
 
 USAGE:
-    uuidgen [OPTIONS]
+    idgen [OPTIONS]
 
 FLAGS:
     -h --help       Prints the help information
