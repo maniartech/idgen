@@ -31,4 +31,4 @@ OPTIONS:
     -p --prefix   <str>   Prefix for the generated ids (Default: None)
 ```
 
-Copoyright © 2021-2022 ManiarTech. All rights reserved.
+Copyright © 2021-2022 ManiarTech. All rights reserved.
