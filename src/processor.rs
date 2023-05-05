@@ -87,6 +87,7 @@ fn print_help() {
       -d --hyphen           Generates the hyphened version of UUID-v4 (Default)
       -n --nanoid   <num?>  Generates the nanoid with the specified length (Default: 21)
       -c --count    <num>   Number of times the ids need to be printed (Default 1)
+      -p --prefix   <str>   Prefix for the generated ids (Default: None)
   ",
         VERSION
     )
