@@ -1,104 +1,170 @@
 # idgen
 
-Written in Rust, this tiny utility quickly generates UUID(v4), NanoID, and MongoDB ObjectIDs. This library is useful during development and testing when you need to generate UUIDs and ObjectIDs for your entities.
+A lightweight command-line utility for generating various types of unique identifiers:
+- UUID (versions 1, 3, 4, and 5)
+- NanoID
+- MongoDB ObjectID
 
-> ✨ The development of this library is complete and no further features are planned. We shall, however, continue to maintain the library and fix any bugs that are reported. If you have any suggestions or feedback, please feel free to open an issue or a pull request.
+This tool is designed for developers who need to generate various types of IDs during development, testing, or data migration.
 
 ## Table of Contents
-
-- [Running the Utility](#running-the-utility)
-  - [Building the Binary](#building-the-binary)
-  - [Usage](#usage)
+- [Features](#features)
 - [Installation](#installation)
-- [Contribution](#contribution)
+- [Quick Start](#quick-start)
+- [ID Types and Use Cases](#id-types-and-use-cases)
+  - [UUID (Universal Unique Identifier)](#uuid-universal-unique-identifier)
+  - [MongoDB ObjectID](#mongodb-objectid)
+  - [NanoID](#nanoid)
+- [Usage Guide](#usage-guide)
+  - [Command Options](#command-options)
+  - [Format Options](#format-options)
+  - [Examples](#examples)
+  - [Common UUID Namespaces](#common-uuid-namespaces)
+- [Contributing](#contributing)
 - [License](#license)
 
-## Running the Utility
-
-Currently, we do not supply any pre-built binaries. You will need to build the binary from the source code. Please follow the instructions below to build the binary.
-
-### Building the Binary
-
-You will need to have [Rust](https://www.rust-lang.org/) installed on your system. Once you have Rust installed, you can build the binary using the following command:
-
-```bash
-cargo build --release
-```
-
-The binary will be created in the `target/release` directory. Copy the binary to a location in your `PATH` variable. Run the following command to verify that the binary is working:
-
-```bash
-idgen --help
-```
-
-It will print the following help information for the utility.
-
-```txt
- _     _
-(_) __| | __ _  ___ _ __
-| |/ _` |/ _` |/ _ \ '_ \
-| | (_| | (_| |  __/ | | |
-|_|\__,_|\__, |\___|_| |_|
-         |___/
-
-ID Generator - Version 1.2.0
-Mohamed Aamir Maniar - https://www.linkedin.com/in/aamironline/
-Generates and prints the UUID (or ObjectID) for the specified number of times.
-
-USAGE:
-    idgen [OPTIONS]
-
-FLAGS:
-    -h --help       Prints the help information
-    -v --version    Prints the version information
-
-OPTIONS:
-    -s --simple           Generates a simple UUID-v4 without hyphens
-    -u --urn              Generates the UUID-v4 with URN signature
-    -o --objectid         Generates the sequential MongoDB ObjectId
-    -d --hyphen           Generates the hyphened version of UUID-v4 (Default)
-    -n --nanoid   <num?>  Generates the nanoid with the specified length (Default: 21)
-    -c --count    <num>   Number of times the ids need to be printed (Default: 1)
-    -p --prefix   <str>   Prefix for the generated ids (Default: None)
-```
-
-### Usage
-
-Here are some examples of how to use the utility:
-
-- Generate a simple UUID-v4 without hyphens:
-  ```bash
-  idgen --simple
-  ```
-
-- Generate a UUID-v4 with URN signature:
-  ```bash
-  idgen --urn
-  ```
-
-- Generate a sequential MongoDB ObjectId:
-  ```bash
-  idgen --objectid
-  ```
-
-- Generate a nanoid with a specified length:
-  ```bash
-  idgen --nanoid 10
-  ```
-
-- Generate multiple IDs with a prefix:
-  ```bash
-  idgen --count 5 --prefix "ID_"
-  ```
+## Features
+- Generate UUIDs with support for all major versions (v1, v3, v4, v5)
+- Create MongoDB-style ObjectIDs
+- Generate URL-safe NanoIDs with configurable length
+- Multiple output formats (simple, hyphenated, URN)
+- Support for batch generation
+- Custom prefix support
+- Banner-free mode for script integration
 
 ## Installation
 
-To install Rust, follow the instructions on the [official Rust website](https://www.rust-lang.org/learn/get-started).
+1. Install [Rust](https://www.rust-lang.org/learn/get-started) if not already installed
+2. Build from source:
+   ```bash
+   git clone https://github.com/maniartech/idgen.git
+   cd idgen
+   cargo build --release
+   ```
+3. Copy binary to your PATH:
+   ```bash
+   # Linux/macOS
+   cp target/release/idgen /usr/local/bin/
 
-## Contribution
+   # Windows (PowerShell, adjust path as needed)
+   Copy-Item target/release/idgen.exe -Destination "$env:USERPROFILE/AppData/Local/Microsoft/WindowsApps/"
+   ```
 
-We welcome contributions! If you have any suggestions or feedback, please feel free to open an issue or a pull request. For major changes, please open an issue first to discuss what you would like to change.
+## Quick Start
+
+Generate a random UUID (v4):
+```bash
+idgen
+```
+
+Generate without banner:
+```bash
+idgen -nb
+```
+
+Generate multiple IDs:
+```bash
+idgen -c 3
+```
+
+## ID Types and Use Cases
+
+### UUID (Universal Unique Identifier)
+Standard 128-bit identifiers with multiple versions for different needs:
+
+#### UUID v1 (Time-based)
+- Format: Timestamp + node ID based
+- Example: `550e8400-e29b-11d4-a716-446655440000`
+- Best for: Logging, temporal ordering, distributed systems
+
+#### UUID v4 (Random)
+- Format: Random numbers
+- Example: `550e8400-e29b-44d4-a716-446655440000`
+- Best for: Default choice, database keys, session IDs
+
+#### UUID v3/v5 (Name-based)
+- v3 uses MD5, v5 uses SHA-1 (preferred)
+- Example: `cfbff0d1-9375-5685-968c-48ce8b15ae17`
+- Best for: Consistent IDs from same input, content addressing
+
+### MongoDB ObjectID
+12-byte identifier combining timestamp, machine ID, and counter:
+- Example: `507f1f77bcf86cd799439011`
+- Best for: Document IDs, chronological sorting
+
+### NanoID
+Compact, URL-safe identifiers:
+- Example: `V1StGXR8_Z5jdHi6B-myT`
+- Best for: Short URLs, user-facing IDs, frontend generation
+
+## Usage Guide
+
+### Command Options
+```
+idgen [OPTIONS]
+
+FLAGS:
+    -h --help       Show help information
+    -v --version    Show version information
+    -nb --no-banner Suppress banner output
+
+UUID VERSION OPTIONS:
+    -u1 --uuid1     UUID v1 (Time-based)
+    -u3 --uuid3     UUID v3 (MD5 hash-based)
+    -u4 --uuid4     UUID v4 (Random - Default)
+    -u5 --uuid5     UUID v5 (SHA1 hash-based)
+
+FORMAT OPTIONS:
+    -s --simple     Output without hyphens
+    -u --urn       Output as URN
+    -o --objectid   Generate MongoDB ObjectID
+    -d --hyphen     Standard UUID format (Default)
+    -n --nanoid    Generate NanoID
+
+OTHER OPTIONS:
+    -c --count      Number of IDs to generate (Default: 1)
+    -p --prefix     Add prefix to generated IDs
+    --namespace     UUID namespace for v3/v5
+    --name         Name string for v3/v5
+```
+
+### Format Options
+Each ID can be formatted in different ways:
+
+- **Simple**: No separators (`550e8400e29b44d4a716446655440000`)
+- **Hyphenated**: Standard format (`550e8400-e29b-44d4-a716-446655440000`)
+- **URN**: URN format (`urn:uuid:550e8400-e29b-44d4-a716-446655440000`)
+
+### Examples
+```bash
+# Various UUID versions
+idgen -u4                    # Random UUID v4
+idgen -u1                    # Time-based UUID v1
+idgen -u5 --namespace 6ba7b810-9dad-11d1-80b4-00c04fd430c8 --name example.com
+
+# Different formats
+idgen -s                     # Simple format (no hyphens)
+idgen -u                     # URN format
+idgen -o                     # MongoDB ObjectID
+idgen -n 10                 # NanoID length 10
+
+# Output options
+idgen -c 5                  # Generate 5 IDs
+idgen -p 'test-' -c 3       # Add prefix
+idgen -nb                   # No banner output
+```
+
+### Common UUID Namespaces
+For UUID v3/v5, use these standard namespaces:
+- DNS: `6ba7b810-9dad-11d1-80b4-00c04fd430c8`
+- URL: `6ba7b811-9dad-11d1-80b4-00c04fd430c8`
+- OID: `6ba7b812-9dad-11d1-80b4-00c04fd430c8`
+- X500: `6ba7b814-9dad-11d1-80b4-00c04fd430c8`
+
+## Contributing
+
+We welcome contributions! Please feel free to submit a Pull Request. For major changes, open an issue first.
 
 ## License
 
-> **MIT License**<br>Copyright © 2021-2025 [ManiarTech](https://www.maniartech.com/). All rights reserved.
+MIT License - Copyright © 2021-2025 [ManiarTech®](https://www.maniartech.com/)
