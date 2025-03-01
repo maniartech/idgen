@@ -13,6 +13,7 @@ pub fn parse_n_process() {
     let mut prefix = "";
     let mut namespace: Option<String> = None;
     let mut name: Option<String> = None;
+    let mut show_banner = true;
 
     let mut lastcmd = String::new();
 
@@ -29,6 +30,8 @@ pub fn parse_n_process() {
             format = IDFormat::OID;
         } else if arg == "-n" || arg == "--nano" {
             format = IDFormat::NanoID;
+        } else if arg == "-nb" || arg == "--no-banner" {
+            show_banner = false;
         } else if arg == "-u1" || arg == "--uuid1" {
             version = UuidVersion::V1;
             format = match format.clone() {
@@ -78,7 +81,9 @@ pub fn parse_n_process() {
         lastcmd = arg.clone();
     });
 
-    print_banner();
+    if show_banner {
+        print_banner();
+    }
 
     if help {
         return print_help();
@@ -92,14 +97,17 @@ pub fn parse_n_process() {
         eprintln!("Error: {}", err);
         process::exit(1);
     }
-    println!("");
 }
 
 fn print_uuid(id_format: IDFormat, len: Option<usize>, count: i32, prefix: &str, namespace: Option<&str>, name: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
-    for _ in 0..count {
+    for i in 0..count {
         let id = new_id(&id_format, len, namespace, name)?;
-        println!("{}{}", prefix, id);
+        print!("{}{}", prefix, id);
+        if i < count - 1 {
+            print!("\n");
+        }
     }
+    print!("\n");
     Ok(())
 }
 
@@ -123,6 +131,7 @@ fn print_help() {
   FLAGS:
       -h --help       Prints the help information
       -v --version    Prints the version information
+      -nb --no-banner Suppresses the banner output
 
   UUID VERSION OPTIONS:
       -u1 --uuid1          Generates UUID version 1 (Time-based)
@@ -154,6 +163,7 @@ fn print_help() {
       idgen -o                            Generate a MongoDB ObjectID
       idgen -c 5                          Generate 5 UUIDs
       idgen -p 'test-' -c 3               Generate 3 UUIDs with prefix 'test-'
+      idgen -nb -u4                       Generate a UUID v4 without banner
   ",
         VERSION
     )
@@ -163,15 +173,13 @@ fn print_help() {
 
 fn print_banner() {
     // represents the multiline banner text
-    let banner = r#"
- _     _
+    let banner = r#" _     _
 (_) __| | __ _  ___ _ __
 | |/ _` |/ _` |/ _ \ '_ \
 | | (_| | (_| |  __/ | | |
 |_|\__,_|\__, |\___|_| |_|
-         |___/
-"#;
-    println!("{}", banner);
+         |___/"#;
+    print!("{}\n", banner);  // Changed to print! and explicit \n
 }
 
 #[cfg(test)]
@@ -351,5 +359,19 @@ mod tests {
         assert!(matches!(format, IDFormat::Hyphenated(UuidVersion::V3)));
         assert_eq!(namespace, Some("DNS".to_string()));
         assert_eq!(name, Some("example.com".to_string()));
+    }
+
+    #[test]
+    fn test_no_banner_flag() {
+        let args = with_args(vec!["--no-banner"]);
+        let mut show_banner = true;
+
+        args.iter().enumerate().for_each(|(_, arg)| {
+            if arg == "-nb" || arg == "--no-banner" {
+                show_banner = false;
+            }
+        });
+
+        assert!(!show_banner);
     }
 }
