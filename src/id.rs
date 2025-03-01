@@ -3,6 +3,27 @@ use bson::oid::ObjectId;
 use uuid::Uuid;
 use std::str::FromStr;
 
+#[derive(Debug)]
+pub enum IDError {
+    MissingNamespace(String),
+    MissingName(String),
+    InvalidNamespace(String),
+    MissingLength(String),
+}
+
+impl std::fmt::Display for IDError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            IDError::MissingNamespace(msg) => write!(f, "{}", msg),
+            IDError::MissingName(msg) => write!(f, "{}", msg),
+            IDError::InvalidNamespace(msg) => write!(f, "{}", msg),
+            IDError::MissingLength(msg) => write!(f, "{}", msg),
+        }
+    }
+}
+
+impl std::error::Error for IDError {}
+
 /// Enum representing different ID formats and versions
 #[derive(Debug, Clone)]
 pub enum IDFormat {
@@ -36,44 +57,56 @@ pub enum UuidVersion {
  *
  * A string representing the generated ID
  */
-pub fn new_id(id_format: &IDFormat, len: Option<usize>, namespace: Option<&str>, name: Option<&str>) -> String {
+pub fn new_id(id_format: &IDFormat, len: Option<usize>, namespace: Option<&str>, name: Option<&str>) -> Result<String, IDError> {
     match id_format {
         IDFormat::Simple(version) => {
-            let uuid = generate_uuid(*version, namespace, name);
-            uuid.simple().to_string()
+            Ok(generate_uuid(*version, namespace, name)?.simple().to_string())
         },
         IDFormat::Hyphenated(version) => {
-            let uuid = generate_uuid(*version, namespace, name);
-            uuid.hyphenated().to_string()
+            Ok(generate_uuid(*version, namespace, name)?.hyphenated().to_string())
         },
         IDFormat::URN(version) => {
-            let uuid = generate_uuid(*version, namespace, name);
-            uuid.urn().to_string()
+            Ok(generate_uuid(*version, namespace, name)?.urn().to_string())
         },
-        IDFormat::OID => ObjectId::new().to_string(),
+        IDFormat::OID => Ok(ObjectId::new().to_string()),
         IDFormat::NanoID => {
-            let l = len.expect("Length must be provided for NanoID");
-            nanoid!(l)
+            let l = len.ok_or_else(||
+                IDError::MissingLength("NanoID requires a length parameter. Use -n <length> or --nano <length>".to_string())
+            )?;
+            Ok(nanoid!(l))
         }
     }
 }
 
-fn generate_uuid(version: UuidVersion, namespace: Option<&str>, name: Option<&str>) -> Uuid {
+fn generate_uuid(version: UuidVersion, namespace: Option<&str>, name: Option<&str>) -> Result<Uuid, IDError> {
     match version {
         UuidVersion::V1 => {
-            // For v1, we'll use the current timestamp
-            Uuid::now_v1(&[1, 2, 3, 4, 5, 6])
+            Ok(Uuid::now_v1(&[1, 2, 3, 4, 5, 6]))
         },
         UuidVersion::V3 => {
-            let namespace = Uuid::from_str(namespace.expect("Namespace required for UUID v3")).expect("Invalid namespace UUID");
-            let name = name.expect("Name required for UUID v3");
-            Uuid::new_v3(&namespace, name.as_bytes())
+            let namespace = namespace.ok_or_else(||
+                IDError::MissingNamespace("UUID v3 requires --namespace parameter. Example: --namespace 6ba7b810-9dad-11d1-80b4-00c04fd430c8".to_string())
+            )?;
+            let name = name.ok_or_else(||
+                IDError::MissingName("UUID v3 requires --name parameter. Example: --name example.com".to_string())
+            )?;
+            let namespace = Uuid::from_str(namespace).map_err(|_|
+                IDError::InvalidNamespace("Invalid namespace UUID format. Must be a valid UUID like 6ba7b810-9dad-11d1-80b4-00c04fd430c8.\nCommon namespaces:\n  - DNS: 6ba7b810-9dad-11d1-80b4-00c04fd430c8\n  - URL: 6ba7b811-9dad-11d1-80b4-00c04fd430c8".to_string())
+            )?;
+            Ok(Uuid::new_v3(&namespace, name.as_bytes()))
         },
-        UuidVersion::V4 => Uuid::new_v4(),
+        UuidVersion::V4 => Ok(Uuid::new_v4()),
         UuidVersion::V5 => {
-            let namespace = Uuid::from_str(namespace.expect("Namespace required for UUID v5")).expect("Invalid namespace UUID");
-            let name = name.expect("Name required for UUID v5");
-            Uuid::new_v5(&namespace, name.as_bytes())
+            let namespace = namespace.ok_or_else(||
+                IDError::MissingNamespace("UUID v5 requires --namespace parameter. Example: --namespace 6ba7b810-9dad-11d1-80b4-00c04fd430c8".to_string())
+            )?;
+            let name = name.ok_or_else(||
+                IDError::MissingName("UUID v5 requires --name parameter. Example: --name example.com".to_string())
+            )?;
+            let namespace = Uuid::from_str(namespace).map_err(|_|
+                IDError::InvalidNamespace("Invalid namespace UUID format. Must be a valid UUID like 6ba7b810-9dad-11d1-80b4-00c04fd430c8.\nCommon namespaces:\n  - DNS: 6ba7b810-9dad-11d1-80b4-00c04fd430c8\n  - URL: 6ba7b811-9dad-11d1-80b4-00c04fd430c8".to_string())
+            )?;
+            Ok(Uuid::new_v5(&namespace, name.as_bytes()))
         }
     }
 }
@@ -84,44 +117,44 @@ mod tests {
 
     #[test]
     fn test_simple_uuid_v4() {
-        let id = new_id(&IDFormat::Simple(UuidVersion::V4), None, None, None);
+        let id = new_id(&IDFormat::Simple(UuidVersion::V4), None, None, None).unwrap();
         assert_eq!(id.len(), 32);
         assert!(!id.contains('-'));
     }
 
     #[test]
     fn test_hyphenated_uuid_v4() {
-        let id = new_id(&IDFormat::Hyphenated(UuidVersion::V4), None, None, None);
+        let id = new_id(&IDFormat::Hyphenated(UuidVersion::V4), None, None, None).unwrap();
         assert_eq!(id.len(), 36);
         assert_eq!(id.matches('-').count(), 4);
     }
 
     #[test]
     fn test_urn_uuid_v4() {
-        let id = new_id(&IDFormat::URN(UuidVersion::V4), None, None, None);
+        let id = new_id(&IDFormat::URN(UuidVersion::V4), None, None, None).unwrap();
         assert!(id.starts_with("urn:uuid:"));
         assert_eq!(id.len(), 45);
     }
 
     #[test]
     fn test_uuid_v3() {
-        let namespace = "6ba7b810-9dad-11d1-80b4-00c04fd430c8"; // UUID namespace for URLs
+        let namespace = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
         let name = "example.com";
-        let id = new_id(&IDFormat::Simple(UuidVersion::V3), None, Some(namespace), Some(name));
+        let id = new_id(&IDFormat::Simple(UuidVersion::V3), None, Some(namespace), Some(name)).unwrap();
         assert_eq!(id.len(), 32);
     }
 
     #[test]
     fn test_uuid_v5() {
-        let namespace = "6ba7b810-9dad-11d1-80b4-00c04fd430c8"; // UUID namespace for URLs
+        let namespace = "6ba7b810-9dad-11d1-80b4-00c04fd430c8";
         let name = "example.com";
-        let id = new_id(&IDFormat::Simple(UuidVersion::V5), None, Some(namespace), Some(name));
+        let id = new_id(&IDFormat::Simple(UuidVersion::V5), None, Some(namespace), Some(name)).unwrap();
         assert_eq!(id.len(), 32);
     }
 
     #[test]
     fn test_objectid() {
-        let id = new_id(&IDFormat::OID, None, None, None);
+        let id = new_id(&IDFormat::OID, None, None, None).unwrap();
         assert_eq!(id.len(), 24);
         assert!(id.chars().all(|c| c.is_ascii_hexdigit()));
     }
@@ -129,25 +162,25 @@ mod tests {
     #[test]
     fn test_nanoid() {
         let len = 10;
-        let id = new_id(&IDFormat::NanoID, Some(len), None, None);
+        let id = new_id(&IDFormat::NanoID, Some(len), None, None).unwrap();
         assert_eq!(id.len(), len);
     }
 
     #[test]
-    #[should_panic(expected = "Length must be provided for NanoID")]
     fn test_nanoid_requires_length() {
-        new_id(&IDFormat::NanoID, None, None, None);
+        let result = new_id(&IDFormat::NanoID, None, None, None);
+        assert!(matches!(result, Err(IDError::MissingLength(_))));
     }
 
     #[test]
-    #[should_panic(expected = "Namespace required for UUID v3")]
     fn test_uuid_v3_requires_namespace() {
-        new_id(&IDFormat::Simple(UuidVersion::V3), None, None, Some("test"));
+        let result = new_id(&IDFormat::Simple(UuidVersion::V3), None, None, Some("test"));
+        assert!(matches!(result, Err(IDError::MissingNamespace(_))));
     }
 
     #[test]
-    #[should_panic(expected = "Name required for UUID v3")]
     fn test_uuid_v3_requires_name() {
-        new_id(&IDFormat::Simple(UuidVersion::V3), None, Some("6ba7b810-9dad-11d1-80b4-00c04fd430c8"), None);
+        let result = new_id(&IDFormat::Simple(UuidVersion::V3), None, Some("6ba7b810-9dad-11d1-80b4-00c04fd430c8"), None);
+        assert!(matches!(result, Err(IDError::MissingName(_))));
     }
 }
