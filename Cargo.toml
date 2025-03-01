@@ -5,6 +5,6 @@ authors = ["Mohamed Aamir Maniar <aamir.maniar@maniartech.com>"]
 edition = "2018"
 
 [dependencies]
-uuid = { version = "0.8", features = ["serde", "v4"] }
-objectid = { version = "^0.2", features = ["serde"] }
+uuid = { version = "1.4.1", features = ["v4"], default-features = false }
+bson = { version = "2.7.0", default-features = false }
 nanoid = "0.4.0"
