@@ -2,6 +2,7 @@ use nanoid::nanoid;
 use bson::oid::ObjectId;
 use uuid::Uuid;
 
+/// Enum representing different ID formats
 #[derive(Debug)]
 pub enum IDFormat {
     Simple,
@@ -13,6 +14,15 @@ pub enum IDFormat {
 
 /**
  * Returns the newly generated id
+ *
+ * # Arguments
+ *
+ * * `id_format` - The format of the ID to generate
+ * * `len` - The length of the ID (only applicable for NanoID)
+ *
+ * # Returns
+ *
+ * A string representing the generated ID
  */
 pub fn new_id(id_format: &IDFormat, len: Option<usize>) -> String {
     match id_format {
@@ -21,7 +31,7 @@ pub fn new_id(id_format: &IDFormat, len: Option<usize>) -> String {
         IDFormat::URN => Uuid::new_v4().urn().to_string(),
         IDFormat::OID => ObjectId::new().to_string(),
         IDFormat::NanoID => {
-            let l = len.unwrap();
+            let l = len.expect("Length must be provided for NanoID");
             nanoid!(l)
         }
     }
@@ -68,7 +78,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic(expected = "Length must be provided for NanoID")]
     fn test_nanoid_requires_length() {
         new_id(&IDFormat::NanoID, None);
     }
