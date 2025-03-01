@@ -1,4 +1,5 @@
 use std::env;
+use std::process;
 use crate::id::{new_id, IDFormat, UuidVersion};
 
 pub fn parse_n_process() {
@@ -87,14 +88,19 @@ pub fn parse_n_process() {
         return print_version();
     }
 
-    print_uuid(format, len, count, prefix, namespace.as_deref(), name.as_deref());
+    if let Err(err) = print_uuid(format, len, count, prefix, namespace.as_deref(), name.as_deref()) {
+        eprintln!("Error: {}", err);
+        process::exit(1);
+    }
     println!("");
 }
 
-fn print_uuid(id_format: IDFormat, len: Option<usize>, count: i32, prefix: &str, namespace: Option<&str>, name: Option<&str>) {
+fn print_uuid(id_format: IDFormat, len: Option<usize>, count: i32, prefix: &str, namespace: Option<&str>, name: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
     for _ in 0..count {
-        println!("{}{}", prefix, new_id(&id_format, len, namespace, name));
+        let id = new_id(&id_format, len, namespace, name)?;
+        println!("{}{}", prefix, id);
     }
+    Ok(())
 }
 
 /// Prints the program version.
