@@ -182,6 +182,7 @@ fn print_help() {
       idgen -u5 --namespace DNS --name example.com    Generate a v5 UUID
       idgen -s -u4                                    Generate a simple UUID v4 without hyphens
       idgen -u -u4                                    Generate a UUID v4 with URN format
+      idgen -n                                        Generate a NanoID of default length (21)
       idgen -n 10                                     Generate a NanoID of length 10
       idgen -o                                        Generate a MongoDB ObjectID
       idgen -C                                        Generate a version 1 CUID

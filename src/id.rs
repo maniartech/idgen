@@ -10,7 +10,6 @@ pub enum IDError {
     MissingNamespace(String),
     MissingName(String),
     InvalidNamespace(String),
-    MissingLength(String),
     // There are several potential CuidError states but all of them
     // seem to be caused by OS errors so I've just shimmed this for now
     CuidError(cuid::CuidError),
@@ -22,7 +21,6 @@ impl std::fmt::Display for IDError {
             IDError::MissingNamespace(msg) => write!(f, "{}", msg),
             IDError::MissingName(msg) => write!(f, "{}", msg),
             IDError::InvalidNamespace(msg) => write!(f, "{}", msg),
-            IDError::MissingLength(msg) => write!(f, "{}", msg),
             IDError::CuidError(err) => write!(f, "{}", err.to_string()), // This isn't great but should be fine
         }
     }
@@ -88,12 +86,7 @@ pub fn new_id(
         IDFormat::URN(version) => Ok(generate_uuid(*version, namespace, name)?.urn().to_string()),
         IDFormat::OID => Ok(ObjectId::new().to_string()),
         IDFormat::NanoID => {
-            let l = len.ok_or_else(|| {
-                IDError::MissingLength(
-                    "NanoID requires a length parameter. Use -n <length> or --nano <length>"
-                        .to_string(),
-                )
-            })?;
+            let l = len.unwrap_or(21);
             Ok(nanoid!(l))
         }
         IDFormat::Cuid(version) => Ok(generate_cuid(*version))?,
@@ -215,9 +208,9 @@ mod tests {
     }
 
     #[test]
-    fn test_nanoid_requires_length() {
-        let result = new_id(&IDFormat::NanoID, None, None, None);
-        assert!(matches!(result, Err(IDError::MissingLength(_))));
+    fn test_nanoid_default_length() {
+        let id = new_id(&IDFormat::NanoID, None, None, None).unwrap();
+        assert_eq!(id.len(), 21);
     }
 
     #[test]
