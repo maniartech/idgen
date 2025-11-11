@@ -222,7 +222,7 @@ mod tests {
     #[test]
     fn test_default_format() {
         let args = with_args(vec![]);
-        let mut version = UuidVersion::V4;
+        let version = UuidVersion::V4;
         let mut format = IDFormat::Hyphenated(version);
         let mut count = 1;
         let mut help = false;
