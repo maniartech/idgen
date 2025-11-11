@@ -75,7 +75,7 @@ pub fn parse_n_process() {
         if lastcmd == "-c" || lastcmd == "--count" {
             count = arg.parse::<i32>().unwrap_or(1);
         } else if lastcmd == "-n" || lastcmd == "--nano" {
-            len = Some(arg.parse::<usize>().unwrap_or(21));
+            len = arg.parse::<usize>().ok();
         } else if lastcmd == "-p" || lastcmd == "--prefix" {
             prefix = arg;
         } else if lastcmd == "--namespace" {
