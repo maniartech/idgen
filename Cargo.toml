@@ -2,7 +2,7 @@
 authors = [ "Mohamed Aamir Maniar <aamir.maniar@maniartech.com>" ]
 edition = "2018"
 name = "idgen"
-version = "1.3.0"
+version = "1.3.1"
 
 [dependencies]
 bson = { version = "3.0.0", default-features = false, features = [
@@ -11,7 +11,7 @@ bson = { version = "3.0.0", default-features = false, features = [
 cuid = "1.3.3"
 nanoid = "0.4.0"
 ulid = "1.2.1"
-uuid = { version = "1.4.1", features = [
+uuid = { version = "1.18.1", features = [
     "v1",
     "v3",
     "v4",
