@@ -30,9 +30,9 @@ pub fn parse_n_process() {
             format = IDFormat::OID;
         } else if arg == "-n" || arg == "--nano" {
             format = IDFormat::NanoID;
-        } else if arg == "-C" || arg == "--cuid" {
+        } else if arg == "-c1" || arg == "--cuid1" {
             format = IDFormat::Cuid(CuidVersion::V1);
-        } else if arg == "-U" || arg == "--cuid2" {
+        } else if arg == "-c2" || arg == "--cuid2" {
             format = IDFormat::Cuid(CuidVersion::V2);
         } else if arg == "-l" || arg == "--ulid" {
             format = IDFormat::Ulid;
@@ -160,14 +160,14 @@ fn print_help() {
       -u5 --uuid5                                     Generates UUID version 5 (SHA1 hash-based)
 
   FORMAT OPTIONS:
-      -s --simple                                     Generates UUID without hyphens
-      -u --urn                                        Generates UUID with URN signature
-      -o --objectid                                   Generates sequential MongoDB ObjectId
-      -d --hyphen                                     Generates hyphened version of UUID (Default)
-      -n --nanoid <num?>                              Generates nanoid with specified length (Default: 21)
-      -C --cuid                                       Generates a CUIDv1
-      -U --cuid2                                      Generates a CUIDv2
-      -l --ulid                                       Generates a ULID
+      -s  --simple                                     Generates UUID without hyphens
+      -u  --urn                                        Generates UUID with URN signature
+      -o  --objectid                                   Generates sequential MongoDB ObjectId
+      -d  --hyphen                                     Generates hyphened version of UUID (Default)
+      -n  --nanoid <num?>                              Generates nanoid with specified length (Default: 21)
+      -c1 --cuid1                                      Generates a CUIDv1
+      -c2 --cuid2                                      Generates a CUIDv2
+      -l  --ulid                                       Generates a ULID
 
   OTHER OPTIONS:
       -c --count    <num>                             Number of IDs to generate (Default: 1)
@@ -185,8 +185,8 @@ fn print_help() {
       idgen -n                                        Generate a NanoID of default length (21)
       idgen -n 10                                     Generate a NanoID of length 10
       idgen -o                                        Generate a MongoDB ObjectID
-      idgen -C                                        Generate a version 1 CUID
-      idgen -U                                        Generate a version 2 CUID
+      idgen -c1                                       Generate a version 1 CUID
+      idgen -c2                                       Generate a version 2 CUID
       idgen -l                                        Generate a ULID
       idgen -c 5                                      Generate 5 UUIDs
       idgen -p 'test-' -c 3                           Generate 3 UUIDs with prefix 'test-'
