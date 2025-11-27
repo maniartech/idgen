@@ -273,67 +273,18 @@ Commands:
   help         Print this message or the help of the given subcommand(s)
 
 Options:
-  -t, --type <ID_TYPE>
-          Type of ID to generate
-
-          Possible values:
-          - uuid1:    UUID version 1 (time-based)
-          - uuid3:    UUID version 3 (MD5 hash-based, requires --namespace and --name)
-          - uuid4:    UUID version 4 (random)
-          - uuid5:    UUID version 5 (SHA1 hash-based, requires --namespace and --name)
-          - nanoid:   NanoID (URL-safe, configurable length)
-          - cuid1:    CUID version 1
-          - cuid2:    CUID version 2
-          - ulid:     ULID (Universally Unique Lexicographically Sortable Identifier)
-          - objectid: MongoDB ObjectID
-
-          [default: uuid4]
-
-  -f, --format <FORMAT>
-          Output format for UUIDs
-
-          Possible values:
-          - hyphenated: Standard hyphenated format (e.g., 550e8400-e29b-44d4-a716-446655440000)
-          - simple:     Simple format without hyphens (e.g., 550e8400e29b44d4a716446655440000)
-          - urn:        URN format (e.g., urn:uuid:550e8400-e29b-44d4-a716-446655440000)
-
-          [default: hyphenated]
-
-  -c, --count <COUNT>
-          Number of IDs to generate
-
-          [default: 1]
-
-  -l, --length <LENGTH>
-          Length for NanoID (default: 21)
-
-  -p, --prefix <PREFIX>
-          Prefix to add to generated IDs
-
-          [default: ]
-
-  -s, --suffix <SUFFIX>
-          Suffix to add to generated IDs
-
-          [default: ]
-
-      --namespace <NAMESPACE>
-          Namespace UUID for v3/v5 (use DNS, URL, OID, X500, or a custom UUID)
-
-      --name <NAME>
-          Name string for UUID v3/v5
-
-      --json
-          Output as JSON
-
-  -b, --banner
-          Show banner
-
-  -h, --help
-          Print help (see a summary with '-h')
-
-  -V, --version
-          Print version
+  -t, --type <ID_TYPE>         Type of ID to generate [default: uuid4] [possible values: uuid1, uuid3, uuid4, uuid5, nanoid, cuid1, cuid2, ulid, objectid]
+  -f, --format <FORMAT>        Output format for UUIDs [default: hyphenated] [possible values: hyphenated, simple, urn]
+  -c, --count <COUNT>          Number of IDs to generate [default: 1]
+  -l, --length <LENGTH>        Length for NanoID (default: 21)
+  -p, --prefix <PREFIX>        Prefix to add to generated IDs [default: ]
+  -s, --suffix <SUFFIX>        Suffix to add to generated IDs [default: ]
+      --namespace <NAMESPACE>  Namespace UUID for v3/v5 (use DNS, URL, OID, X500, or a custom UUID)
+      --name <NAME>            Name string for UUID v3/v5
+      --json                   Output as JSON
+  -b, --banner                 Show banner
+  -h, --help                   Print help (see more with '--help')
+  -V, --version                Print version
 
 EXAMPLES:
     idgen                                       Generate a random UUID v4 (default)
