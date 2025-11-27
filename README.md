@@ -18,7 +18,8 @@ This tool is designed for developers who need to generate or analyze various typ
   - [Table of Contents](#table-of-contents)
   - [Features](#features)
   - [Installation](#installation)
-    - [Pre-built Binaries (Recommended)](#pre-built-binaries-recommended)
+    - [From crates.io (Recommended)](#from-cratesio-recommended)
+    - [Pre-built Binaries](#pre-built-binaries)
     - [Build from Source](#build-from-source)
   - [Quick Start](#quick-start)
   - [Real-World Scenarios](#real-world-scenarios)
@@ -66,7 +67,13 @@ This tool is designed for developers who need to generate or analyze various typ
 
 ## Installation
 
-### Pre-built Binaries (Recommended)
+### From crates.io (Recommended)
+
+```bash
+cargo install idgen-cli
+```
+
+### Pre-built Binaries
 
 Download the latest release for your platform from [GitHub Releases](https://github.com/maniartech/idgen/releases):
 
