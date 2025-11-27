@@ -1,4 +1,4 @@
-use idgen::inspector::inspect_id;
+use idgen_cli::inspector::inspect_id;
 
 // ============================================
 // UUID Detection Tests

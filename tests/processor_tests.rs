@@ -1,4 +1,4 @@
-use idgen::id::{CuidVersion, IDFormat, UuidVersion};
+use idgen_cli::id::{CuidVersion, IDFormat, UuidVersion};
 
 fn with_args(args: Vec<&str>) -> Vec<String> {
     let mut full_args = vec!["program"];

@@ -1,4 +1,4 @@
-use idgen::id::{new_id, CuidVersion, IDError, IDFormat, UuidVersion};
+use idgen_cli::id::{new_id, CuidVersion, IDError, IDFormat, UuidVersion};
 
 // ============================================
 // UUID v4 Tests
