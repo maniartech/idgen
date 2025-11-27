@@ -332,66 +332,8 @@ Options:
   -h, --help
           Print help (see a summary with '-h')
 
-          Name string for UUID v3/v5
-
-      --json
-          Output as JSON
-
-  -b, --banner
-          Show banner
-
-  -h, --help
-          Print help (see a summary with '-h')
-
-
-      --json
-          Output as JSON
-
-  -b, --banner
-          Show banner
-
-  -h, --help
-          Print help (see a summary with '-h')
-
-      --json
-          Output as JSON
-
-  -b, --banner
-          Show banner
-
-  -h, --help
-          Print help (see a summary with '-h')
-
-
-  -b, --banner
-          Show banner
-
-  -h, --help
-          Print help (see a summary with '-h')
-
-  -b, --banner
-          Show banner
-
-  -h, --help
-          Print help (see a summary with '-h')
-
-          Show banner
-
-  -h, --help
-          Print help (see a summary with '-h')
-
-  -h, --help
-          Print help (see a summary with '-h')
-
-          Print help (see a summary with '-h')
-
-
   -V, --version
           Print version
-  -V, --version
-          Print version
-          Print version
-
 
 EXAMPLES:
     idgen                                       Generate a random UUID v4 (default)
