@@ -518,7 +518,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "idgen"
+name = "idgen-cli"
 version = "1.4.0"
 dependencies = [
  "bson",
