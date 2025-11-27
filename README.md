@@ -209,6 +209,7 @@ FLAGS:
     -h --help       Show help information
     -v --version    Show version information
     -b --banner     Show banner output
+       --json       Output as JSON
 
 UUID VERSION OPTIONS:
     -u1 --uuid1     UUID v1 (Time-based)
@@ -262,6 +263,7 @@ idgen -c 5                  # Generate 5 IDs
 idgen -p 'test-' -c 3       # Add prefix
 idgen -f '.log'             # Add suffix
 idgen -b                    # Show banner output
+idgen --json                # Output as JSON
 ```
 
 ### Common UUID Namespaces

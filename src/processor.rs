@@ -1,6 +1,12 @@
 use crate::id::{new_id, CuidVersion, IDFormat, UuidVersion};
+use serde::Serialize;
 use std::env;
 use std::process;
+
+#[derive(Serialize)]
+struct IdOutput {
+    value: String,
+}
 
 pub fn parse_n_process() {
     let args: Vec<String> = env::args().collect();
@@ -15,6 +21,7 @@ pub fn parse_n_process() {
     let mut namespace: Option<String> = None;
     let mut name: Option<String> = None;
     let mut show_banner = false;
+    let mut json_output = false;
 
     let mut lastcmd = String::new();
 
@@ -23,6 +30,9 @@ pub fn parse_n_process() {
             help = true;
         } else if arg == "-v" || arg == "--version" {
             show_version = true;
+        } else if arg == "--json" {
+            json_output = true;
+            show_banner = false;
         } else if arg == "-s" || arg == "--simple" {
             format = IDFormat::Simple(version);
         } else if arg == "-u" || arg == "--urn" {
@@ -110,6 +120,7 @@ pub fn parse_n_process() {
         suffix,
         namespace.as_deref(),
         name.as_deref(),
+        json_output,
     ) {
         eprintln!("Error: {}", err);
         process::exit(1);
@@ -124,15 +135,28 @@ fn print_uuid(
     suffix: &str,
     namespace: Option<&str>,
     name: Option<&str>,
+    json_output: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    for i in 0..count {
-        let id = new_id(&id_format, len, namespace, name)?;
-        print!("{}{}{}", prefix, id, suffix);
-        if i < count - 1 {
-            print!("\n");
+    if json_output {
+        let mut ids = Vec::new();
+        for _ in 0..count {
+            let id = new_id(&id_format, len, namespace, name)?;
+            ids.push(IdOutput {
+                value: format!("{}{}{}", prefix, id, suffix),
+            });
         }
+        let json = serde_json::to_string_pretty(&ids)?;
+        println!("{}", json);
+    } else {
+        for i in 0..count {
+            let id = new_id(&id_format, len, namespace, name)?;
+            print!("{}{}{}", prefix, id, suffix);
+            if i < count - 1 {
+                print!("\n");
+            }
+        }
+        print!("\n");
     }
-    print!("\n");
     Ok(())
 }
 
@@ -157,6 +181,7 @@ fn print_help() {
       -h --help                                       Prints the help information
       -v --version                                    Prints the version information
       -b --banner                                     Show the banner output
+         --json                                       Output as JSON
 
   UUID VERSION OPTIONS:
       -u1 --uuid1                                     Generates UUID version 1 (Time-based)
@@ -428,6 +453,23 @@ mod tests {
         });
 
         assert!(show_banner);
+    }
+
+    #[test]
+    fn test_json_flag() {
+        let args = with_args(vec!["--json"]);
+        let mut json_output = false;
+        let mut show_banner = true; // Assume default is true for this test logic check
+
+        args.iter().enumerate().for_each(|(_, arg)| {
+            if arg == "--json" {
+                json_output = true;
+                show_banner = false;
+            }
+        });
+
+        assert!(json_output);
+        assert!(!show_banner);
     }
 
     #[test]
