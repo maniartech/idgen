@@ -14,7 +14,7 @@ pub fn parse_n_process() {
     let mut suffix = "";
     let mut namespace: Option<String> = None;
     let mut name: Option<String> = None;
-    let mut show_banner = true;
+    let mut show_banner = false;
 
     let mut lastcmd = String::new();
 
@@ -37,8 +37,8 @@ pub fn parse_n_process() {
             format = IDFormat::Cuid(CuidVersion::V2);
         } else if arg == "-l" || arg == "--ulid" {
             format = IDFormat::Ulid;
-        } else if arg == "-nb" || arg == "--no-banner" {
-            show_banner = false;
+        } else if arg == "-b" || arg == "--banner" {
+            show_banner = true;
         } else if arg == "-u1" || arg == "--uuid1" {
             version = UuidVersion::V1;
             format = match format.clone() {
@@ -156,7 +156,7 @@ fn print_help() {
   FLAGS:
       -h --help                                       Prints the help information
       -v --version                                    Prints the version information
-      -nb --no-banner                                 Suppresses the banner output
+      -b --banner                                     Show the banner output
 
   UUID VERSION OPTIONS:
       -u1 --uuid1                                     Generates UUID version 1 (Time-based)
@@ -197,7 +197,6 @@ fn print_help() {
       idgen -c 5                                      Generate 5 UUIDs
       idgen -p 'test-' -c 3                           Generate 3 UUIDs with prefix 'test-'
       idgen -f '.log' -n                              Generate a NanoID with suffix '.log'
-      idgen -nb -u4                                   Generate a UUID v4 without banner
   ",
         VERSION
     )
@@ -418,17 +417,17 @@ mod tests {
     }
 
     #[test]
-    fn test_no_banner_flag() {
-        let args = with_args(vec!["--no-banner"]);
-        let mut show_banner = true;
+    fn test_banner_flag() {
+        let args = with_args(vec!["--banner"]);
+        let mut show_banner = false;
 
         args.iter().enumerate().for_each(|(_, arg)| {
-            if arg == "-nb" || arg == "--no-banner" {
-                show_banner = false;
+            if arg == "-b" || arg == "--banner" {
+                show_banner = true;
             }
         });
 
-        assert!(!show_banner);
+        assert!(show_banner);
     }
 
     #[test]
