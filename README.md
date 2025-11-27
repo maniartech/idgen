@@ -3,6 +3,8 @@
 A lightweight command-line utility for generating various types of unique identifiers:
 - UUID (versions 1, 3, 4, and 5)
 - NanoID
+- CUID (versions 1 and 2)
+- ULID
 - MongoDB ObjectID
 
 This tool is designed for developers who need to generate various types of IDs during development, testing, or data migration.
@@ -27,6 +29,8 @@ This tool is designed for developers who need to generate various types of IDs d
 - Generate UUIDs with support for all major versions (v1, v3, v4, v5)
 - Create MongoDB-style ObjectIDs
 - Generate URL-safe NanoIDs with configurable length
+- Generate CUIDs (v1 and v2)
+- Generate ULIDs
 - Multiple output formats (simple, hyphenated, URN)
 - Support for batch generation
 - Custom prefix support
@@ -97,6 +101,17 @@ Compact, URL-safe identifiers:
 - Example: `V1StGXR8_Z5jdHi6B-myT`
 - Best for: Short URLs, user-facing IDs, frontend generation
 
+### CUID (Collision-resistant Unique Identifier)
+Designed for horizontal scaling and performance:
+- v1: Original version
+- v2: Secure, collision-resistant, optimized for modern web
+- Best for: High-performance distributed systems
+
+### ULID (Universally Unique Lexicographically Sortable Identifier)
+Sortable, random, 128-bit identifier:
+- Example: `01ARZ3NDEKTSV4RRFFQ69G5FAV`
+- Best for: Database keys where sorting is important
+
 ## Usage Guide
 
 ### Command Options
@@ -119,7 +134,10 @@ FORMAT OPTIONS:
     -u --urn       Output as URN
     -o --objectid   Generate MongoDB ObjectID
     -d --hyphen     Standard UUID format (Default)
-    -n --nanoid    Generate NanoID
+    -n --nanoid     Generate NanoID
+    -c1 --cuid1     Generate CUID v1
+    -c2 --cuid2     Generate CUID v2
+    -l  --ulid      Generate ULID
 
 OTHER OPTIONS:
     -c --count      Number of IDs to generate (Default: 1)
@@ -147,6 +165,9 @@ idgen -s                     # Simple format (no hyphens)
 idgen -u                     # URN format
 idgen -o                     # MongoDB ObjectID
 idgen -n 10                 # NanoID length 10
+idgen -c1                    # CUID v1
+idgen -c2                    # CUID v2
+idgen -l                     # ULID
 
 # Output options
 idgen -c 5                  # Generate 5 IDs
