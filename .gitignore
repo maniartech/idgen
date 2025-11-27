@@ -1,1 +1,7 @@
 /target
+
+# Build artifacts
+/dist
+
+# Publish history (local tracking)
+scripts/.publish-history
