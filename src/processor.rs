@@ -407,4 +407,54 @@ mod tests {
 
         assert!(!show_banner);
     }
+
+    #[test]
+    fn test_cuid_v1_flag() {
+        let args = with_args(vec!["--cuid1"]);
+        let mut format = IDFormat::Hyphenated(UuidVersion::V4);
+
+        args.iter().enumerate().for_each(|(_, arg)| {
+            if arg == "-c1" || arg == "--cuid1" {
+                format = IDFormat::Cuid(CuidVersion::V1);
+            }
+        });
+
+        if let IDFormat::Cuid(version) = format {
+            assert!(matches!(version, CuidVersion::V1));
+        } else {
+            panic!("Format should be Cuid(V1)");
+        }
+    }
+
+    #[test]
+    fn test_cuid_v2_flag() {
+        let args = with_args(vec!["-c2"]);
+        let mut format = IDFormat::Hyphenated(UuidVersion::V4);
+
+        args.iter().enumerate().for_each(|(_, arg)| {
+            if arg == "-c2" || arg == "--cuid2" {
+                format = IDFormat::Cuid(CuidVersion::V2);
+            }
+        });
+
+        if let IDFormat::Cuid(version) = format {
+            assert!(matches!(version, CuidVersion::V2));
+        } else {
+            panic!("Format should be Cuid(V2)");
+        }
+    }
+
+    #[test]
+    fn test_ulid_flag() {
+        let args = with_args(vec!["--ulid"]);
+        let mut format = IDFormat::Hyphenated(UuidVersion::V4);
+
+        args.iter().enumerate().for_each(|(_, arg)| {
+            if arg == "-l" || arg == "--ulid" {
+                format = IDFormat::Ulid;
+            }
+        });
+
+        assert!(matches!(format, IDFormat::Ulid));
+    }
 }
