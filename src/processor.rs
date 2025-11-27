@@ -1,7 +1,18 @@
-use crate::id::{new_id, CuidVersion, IDFormat, UuidVersion};
+use crate::id::{new_id, CuidVersion, IDError, IDFormat, UuidVersion};
+use crate::inspector::inspect_id;
 use serde::Serialize;
 use std::env;
 use std::process;
+
+/// Exit codes following Unix conventions
+pub mod exit_codes {
+    /// Successful execution
+    pub const SUCCESS: i32 = 0;
+    /// General runtime error (e.g., ID generation failed due to system error)
+    pub const ERROR: i32 = 1;
+    /// Invalid command-line arguments or usage (e.g., missing required params)
+    pub const USAGE_ERROR: i32 = 2;
+}
 
 #[derive(Serialize)]
 struct IdOutput {
@@ -22,6 +33,7 @@ pub fn parse_n_process() {
     let mut name: Option<String> = None;
     let mut show_banner = false;
     let mut json_output = false;
+    let mut inspect_target: Option<String> = None;
 
     let mut lastcmd = String::new();
 
@@ -95,24 +107,60 @@ pub fn parse_n_process() {
             namespace = Some(arg.to_string());
         } else if lastcmd == "--name" {
             name = Some(arg.to_string());
+        } else if lastcmd == "--inspect" {
+            inspect_target = Some(arg.to_string());
         }
 
         lastcmd = arg.clone();
     });
+
+    if let Some(target) = inspect_target {
+        let result = inspect_id(&target);
+        if json_output {
+            let json = serde_json::to_string_pretty(&result).unwrap();
+            println!("{}", json);
+        } else {
+            println!("ID: {}", target);
+            println!("Valid: {}", result.valid);
+            println!("Type: {}", result.id_type);
+            if let Some(v) = result.version {
+                println!("Version: {}", v);
+            }
+            if let Some(v) = result.variant {
+                println!("Variant: {}", v);
+            }
+            if let Some(ts) = result.timestamp {
+                println!("Timestamp: {}", ts);
+            }
+        }
+        // Exit with error code if ID is invalid
+        if !result.valid {
+            process::exit(exit_codes::ERROR);
+        }
+        return;
+    }
 
     if show_banner {
         print_banner();
     }
 
     if help {
-        return print_help();
+        print_help();
+        return;
     }
 
     if show_version {
-        return print_version();
+        print_version();
+        return;
     }
 
-    if let Err(err) = print_uuid(
+    // Validate count
+    if count < 1 {
+        eprintln!("Error: Count must be at least 1, got {}", count);
+        process::exit(exit_codes::USAGE_ERROR);
+    }
+
+    match print_uuid(
         format,
         len,
         count,
@@ -122,8 +170,17 @@ pub fn parse_n_process() {
         name.as_deref(),
         json_output,
     ) {
-        eprintln!("Error: {}", err);
-        process::exit(1);
+        Ok(_) => {}
+        Err(err) => {
+            eprintln!("Error: {}", err);
+            // Check if it's a usage error (missing/invalid arguments)
+            let exit_code = if err.is::<IDError>() {
+                exit_codes::USAGE_ERROR
+            } else {
+                exit_codes::ERROR
+            };
+            process::exit(exit_code);
+        }
     }
 }
 
@@ -182,6 +239,7 @@ fn print_help() {
       -v --version                                    Prints the version information
       -b --banner                                     Show the banner output
          --json                                       Output as JSON
+         --inspect <ID>                               Inspect an ID string
 
   UUID VERSION OPTIONS:
       -u1 --uuid1                                     Generates UUID version 1 (Time-based)
@@ -238,287 +296,4 @@ fn print_banner() {
 |_|\__,_|\__, |\___|_| |_|
          |___/"#;
     print!("{}\n", banner); // Changed to print! and explicit \n
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn with_args(args: Vec<&str>) -> Vec<String> {
-        let mut full_args = vec!["program"];
-        full_args.extend(args);
-        full_args.iter().map(|s| s.to_string()).collect()
-    }
-
-    #[test]
-    fn test_default_format() {
-        let args = with_args(vec![]);
-        let version = UuidVersion::V4;
-        let mut format = IDFormat::Hyphenated(version);
-        let mut count = 1;
-        let mut help = false;
-        let mut show_version = false;
-        let mut len: Option<usize> = None;
-        let mut prefix = "";
-        let mut namespace: Option<String> = None;
-        let mut name: Option<String> = None;
-        let mut lastcmd = String::new();
-
-        args.iter().enumerate().for_each(|(_, arg)| {
-            if arg == "-h" || arg == "--help" {
-                help = true;
-            } else if arg == "-v" || arg == "--version" {
-                show_version = true;
-            } else if arg == "-s" || arg == "--simple" {
-                format = IDFormat::Simple(version);
-            } else if arg == "-u" || arg == "--urn" {
-                format = IDFormat::URN(version);
-            } else if arg == "-o" || arg == "--objectid" {
-                format = IDFormat::OID;
-            } else if arg == "-n" || arg == "--nano" {
-                format = IDFormat::NanoID;
-            }
-
-            if lastcmd == "-c" || lastcmd == "--count" {
-                count = arg.parse::<i32>().unwrap_or(1);
-            } else if lastcmd == "-n" || lastcmd == "--nano" {
-                len = Some(arg.parse::<usize>().unwrap_or(21));
-            } else if lastcmd == "-p" || lastcmd == "--prefix" {
-                prefix = arg;
-            } else if lastcmd == "--namespace" {
-                namespace = Some(arg.to_string());
-            } else if lastcmd == "--name" {
-                name = Some(arg.to_string());
-            }
-
-            lastcmd = arg.clone();
-        });
-
-        assert!(matches!(format, IDFormat::Hyphenated(_)));
-        assert_eq!(count, 1);
-        assert!(!help);
-        assert!(!show_version);
-        assert_eq!(len, None);
-        assert_eq!(prefix, "");
-        assert_eq!(namespace, None);
-        assert_eq!(name, None);
-    }
-
-    #[test]
-    fn test_simple_format() {
-        let args = with_args(vec!["--simple"]);
-        let version = UuidVersion::V4;
-        let mut format = IDFormat::Hyphenated(version);
-        let mut lastcmd = String::new();
-
-        args.iter().enumerate().for_each(|(_, arg)| {
-            if arg == "-s" || arg == "--simple" {
-                format = IDFormat::Simple(version);
-            }
-            lastcmd = arg.clone();
-        });
-
-        assert!(matches!(format, IDFormat::Simple(_)));
-    }
-
-    #[test]
-    fn test_uuid_version() {
-        let args = with_args(vec!["--uuid3"]);
-        let mut version = UuidVersion::V4;
-        let mut format = IDFormat::Hyphenated(version);
-        let mut lastcmd = String::new();
-
-        args.iter().enumerate().for_each(|(_, arg)| {
-            if arg == "-u3" || arg == "--uuid3" {
-                version = UuidVersion::V3;
-                format = IDFormat::Hyphenated(version);
-            }
-            lastcmd = arg.clone();
-        });
-
-        assert!(matches!(format, IDFormat::Hyphenated(UuidVersion::V3)));
-    }
-
-    // Existing tests remain unchanged
-    #[test]
-    fn test_count_option() {
-        let args = with_args(vec!["--count", "5"]);
-        let mut count = 1;
-        let mut lastcmd = String::new();
-
-        args.iter().enumerate().for_each(|(_, arg)| {
-            if lastcmd == "-c" || lastcmd == "--count" {
-                count = arg.parse::<i32>().unwrap_or(1);
-            }
-            lastcmd = arg.clone();
-        });
-
-        assert_eq!(count, 5);
-    }
-
-    #[test]
-    fn test_nanoid_length() {
-        let args = with_args(vec!["--nano", "10"]);
-        let version = UuidVersion::V4;
-        let mut format = IDFormat::Hyphenated(version);
-        let mut len: Option<usize> = None;
-        let mut lastcmd = String::new();
-
-        args.iter().enumerate().for_each(|(_, arg)| {
-            if arg == "-n" || arg == "--nano" {
-                format = IDFormat::NanoID;
-            } else if lastcmd == "-n" || lastcmd == "--nano" {
-                len = Some(arg.parse::<usize>().unwrap_or(21));
-            }
-            lastcmd = arg.clone();
-        });
-
-        assert!(matches!(format, IDFormat::NanoID));
-        assert_eq!(len, Some(10));
-    }
-
-    #[test]
-    fn test_prefix_option() {
-        let args = with_args(vec!["--prefix", "test-"]);
-        let mut prefix = "";
-        let mut lastcmd = String::new();
-
-        args.iter().enumerate().for_each(|(_, arg)| {
-            if lastcmd == "-p" || lastcmd == "--prefix" {
-                prefix = arg;
-            }
-            lastcmd = arg.clone();
-        });
-
-        assert_eq!(prefix, "test-");
-    }
-
-    #[test]
-    fn test_suffix_option() {
-        let args = with_args(vec!["--suffix", ".log"]);
-        let mut suffix = "";
-        let mut lastcmd = String::new();
-
-        args.iter().enumerate().for_each(|(_, arg)| {
-            if lastcmd == "-f" || lastcmd == "--suffix" {
-                suffix = arg;
-            }
-            lastcmd = arg.clone();
-        });
-
-        assert_eq!(suffix, ".log");
-    }
-
-    #[test]
-    fn test_uuid_v3_parameters() {
-        let args = with_args(vec![
-            "--uuid3",
-            "--namespace",
-            "DNS",
-            "--name",
-            "example.com",
-        ]);
-        let mut version = UuidVersion::V4;
-        let mut format = IDFormat::Hyphenated(version);
-        let mut namespace: Option<String> = None;
-        let mut name: Option<String> = None;
-        let mut lastcmd = String::new();
-
-        args.iter().enumerate().for_each(|(_, arg)| {
-            if arg == "-u3" || arg == "--uuid3" {
-                version = UuidVersion::V3;
-                format = IDFormat::Hyphenated(version);
-            } else if lastcmd == "--namespace" {
-                namespace = Some(arg.to_string());
-            } else if lastcmd == "--name" {
-                name = Some(arg.to_string());
-            }
-            lastcmd = arg.clone();
-        });
-
-        assert!(matches!(format, IDFormat::Hyphenated(UuidVersion::V3)));
-        assert_eq!(namespace, Some("DNS".to_string()));
-        assert_eq!(name, Some("example.com".to_string()));
-    }
-
-    #[test]
-    fn test_banner_flag() {
-        let args = with_args(vec!["--banner"]);
-        let mut show_banner = false;
-
-        args.iter().enumerate().for_each(|(_, arg)| {
-            if arg == "-b" || arg == "--banner" {
-                show_banner = true;
-            }
-        });
-
-        assert!(show_banner);
-    }
-
-    #[test]
-    fn test_json_flag() {
-        let args = with_args(vec!["--json"]);
-        let mut json_output = false;
-        let mut show_banner = true; // Assume default is true for this test logic check
-
-        args.iter().enumerate().for_each(|(_, arg)| {
-            if arg == "--json" {
-                json_output = true;
-                show_banner = false;
-            }
-        });
-
-        assert!(json_output);
-        assert!(!show_banner);
-    }
-
-    #[test]
-    fn test_cuid_v1_flag() {
-        let args = with_args(vec!["--cuid1"]);
-        let mut format = IDFormat::Hyphenated(UuidVersion::V4);
-
-        args.iter().enumerate().for_each(|(_, arg)| {
-            if arg == "-c1" || arg == "--cuid1" {
-                format = IDFormat::Cuid(CuidVersion::V1);
-            }
-        });
-
-        if let IDFormat::Cuid(version) = format {
-            assert!(matches!(version, CuidVersion::V1));
-        } else {
-            panic!("Format should be Cuid(V1)");
-        }
-    }
-
-    #[test]
-    fn test_cuid_v2_flag() {
-        let args = with_args(vec!["-c2"]);
-        let mut format = IDFormat::Hyphenated(UuidVersion::V4);
-
-        args.iter().enumerate().for_each(|(_, arg)| {
-            if arg == "-c2" || arg == "--cuid2" {
-                format = IDFormat::Cuid(CuidVersion::V2);
-            }
-        });
-
-        if let IDFormat::Cuid(version) = format {
-            assert!(matches!(version, CuidVersion::V2));
-        } else {
-            panic!("Format should be Cuid(V2)");
-        }
-    }
-
-    #[test]
-    fn test_ulid_flag() {
-        let args = with_args(vec!["--ulid"]);
-        let mut format = IDFormat::Hyphenated(UuidVersion::V4);
-
-        args.iter().enumerate().for_each(|(_, arg)| {
-            if arg == "-l" || arg == "--ulid" {
-                format = IDFormat::Ulid;
-            }
-        });
-
-        assert!(matches!(format, IDFormat::Ulid));
-    }
 }

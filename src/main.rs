@@ -1,7 +1,4 @@
-use processor::parse_n_process;
-
-mod id;
-mod processor;
+use idgen::processor_clap::parse_n_process;
 
 fn main() {
     parse_n_process();
