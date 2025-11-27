@@ -2,7 +2,7 @@
 authors = [ "Mohamed Aamir Maniar <aamir.maniar@maniartech.com>" ]
 edition = "2021"
 name = "idgen-cli"
-version = "1.4.0"
+version = "1.4.1"
 description = "A lightweight, powerful CLI tool for generating UUIDs (v1-v5), NanoIDs, CUIDs, ULIDs, and MongoDB ObjectIDs."
 license = "MIT"
 repository = "https://github.com/maniartech/idgen"
