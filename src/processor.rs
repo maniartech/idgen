@@ -1,6 +1,6 @@
+use crate::id::{new_id, CuidVersion, IDFormat, UuidVersion};
 use std::env;
 use std::process;
-use crate::id::{new_id, IDFormat, UuidVersion};
 
 pub fn parse_n_process() {
     let args: Vec<String> = env::args().collect();
@@ -30,6 +30,12 @@ pub fn parse_n_process() {
             format = IDFormat::OID;
         } else if arg == "-n" || arg == "--nano" {
             format = IDFormat::NanoID;
+        } else if arg == "-c1" || arg == "--cuid1" {
+            format = IDFormat::Cuid(CuidVersion::V1);
+        } else if arg == "-c2" || arg == "--cuid2" {
+            format = IDFormat::Cuid(CuidVersion::V2);
+        } else if arg == "-l" || arg == "--ulid" {
+            format = IDFormat::Ulid;
         } else if arg == "-nb" || arg == "--no-banner" {
             show_banner = false;
         } else if arg == "-u1" || arg == "--uuid1" {
@@ -38,7 +44,7 @@ pub fn parse_n_process() {
                 IDFormat::Simple(_) => IDFormat::Simple(version),
                 IDFormat::Hyphenated(_) => IDFormat::Hyphenated(version),
                 IDFormat::URN(_) => IDFormat::URN(version),
-                _ => format.clone()
+                _ => format.clone(),
             };
         } else if arg == "-u3" || arg == "--uuid3" {
             version = UuidVersion::V3;
@@ -46,7 +52,7 @@ pub fn parse_n_process() {
                 IDFormat::Simple(_) => IDFormat::Simple(version),
                 IDFormat::Hyphenated(_) => IDFormat::Hyphenated(version),
                 IDFormat::URN(_) => IDFormat::URN(version),
-                _ => format.clone()
+                _ => format.clone(),
             };
         } else if arg == "-u4" || arg == "--uuid4" {
             version = UuidVersion::V4;
@@ -54,7 +60,7 @@ pub fn parse_n_process() {
                 IDFormat::Simple(_) => IDFormat::Simple(version),
                 IDFormat::Hyphenated(_) => IDFormat::Hyphenated(version),
                 IDFormat::URN(_) => IDFormat::URN(version),
-                _ => format.clone()
+                _ => format.clone(),
             };
         } else if arg == "-u5" || arg == "--uuid5" {
             version = UuidVersion::V5;
@@ -62,14 +68,14 @@ pub fn parse_n_process() {
                 IDFormat::Simple(_) => IDFormat::Simple(version),
                 IDFormat::Hyphenated(_) => IDFormat::Hyphenated(version),
                 IDFormat::URN(_) => IDFormat::URN(version),
-                _ => format.clone()
+                _ => format.clone(),
             };
         }
 
         if lastcmd == "-c" || lastcmd == "--count" {
             count = arg.parse::<i32>().unwrap_or(1);
         } else if lastcmd == "-n" || lastcmd == "--nano" {
-            len = Some(arg.parse::<usize>().unwrap_or(21));
+            len = arg.parse::<usize>().ok();
         } else if lastcmd == "-p" || lastcmd == "--prefix" {
             prefix = arg;
         } else if lastcmd == "--namespace" {
@@ -93,13 +99,27 @@ pub fn parse_n_process() {
         return print_version();
     }
 
-    if let Err(err) = print_uuid(format, len, count, prefix, namespace.as_deref(), name.as_deref()) {
+    if let Err(err) = print_uuid(
+        format,
+        len,
+        count,
+        prefix,
+        namespace.as_deref(),
+        name.as_deref(),
+    ) {
         eprintln!("Error: {}", err);
         process::exit(1);
     }
 }
 
-fn print_uuid(id_format: IDFormat, len: Option<usize>, count: i32, prefix: &str, namespace: Option<&str>, name: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
+fn print_uuid(
+    id_format: IDFormat,
+    len: Option<usize>,
+    count: i32,
+    prefix: &str,
+    namespace: Option<&str>,
+    name: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
     for i in 0..count {
         let id = new_id(&id_format, len, namespace, name)?;
         print!("{}{}", prefix, id);
@@ -129,41 +149,48 @@ fn print_help() {
       idgen [OPTIONS]
 
   FLAGS:
-      -h --help       Prints the help information
-      -v --version    Prints the version information
-      -nb --no-banner Suppresses the banner output
+      -h --help                                       Prints the help information
+      -v --version                                    Prints the version information
+      -nb --no-banner                                 Suppresses the banner output
 
   UUID VERSION OPTIONS:
-      -u1 --uuid1          Generates UUID version 1 (Time-based)
-      -u3 --uuid3          Generates UUID version 3 (MD5 hash-based)
-      -u4 --uuid4          Generates UUID version 4 (Random - Default)
-      -u5 --uuid5          Generates UUID version 5 (SHA1 hash-based)
+      -u1 --uuid1                                     Generates UUID version 1 (Time-based)
+      -u3 --uuid3                                     Generates UUID version 3 (MD5 hash-based)
+      -u4 --uuid4                                     Generates UUID version 4 (Random - Default)
+      -u5 --uuid5                                     Generates UUID version 5 (SHA1 hash-based)
 
   FORMAT OPTIONS:
-      -s --simple          Generates UUID without hyphens
-      -u --urn            Generates UUID with URN signature
-      -o --objectid       Generates sequential MongoDB ObjectId
-      -d --hyphen         Generates hyphened version of UUID (Default)
-      -n --nanoid <num?>  Generates nanoid with specified length (Default: 21)
+      -s  --simple                                     Generates UUID without hyphens
+      -u  --urn                                        Generates UUID with URN signature
+      -o  --objectid                                   Generates sequential MongoDB ObjectId
+      -d  --hyphen                                     Generates hyphened version of UUID (Default)
+      -n  --nanoid <num?>                              Generates nanoid with specified length (Default: 21)
+      -c1 --cuid1                                      Generates a CUIDv1
+      -c2 --cuid2                                      Generates a CUIDv2
+      -l  --ulid                                       Generates a ULID
 
   OTHER OPTIONS:
-      -c --count    <num>  Number of IDs to generate (Default: 1)
-      -p --prefix   <str>  Prefix for the generated IDs (Default: None)
-         --namespace <str> Namespace UUID for v3/v5 (Required for v3/v5)
-         --name     <str>  Name string for v3/v5 (Required for v3/v5)
+      -c --count    <num>                             Number of IDs to generate (Default: 1)
+      -p --prefix   <str>                             Prefix for the generated IDs (Default: None)
+         --namespace <str>                            Namespace UUID for v3/v5 (Required for v3/v5)
+         --name     <str>                             Name string for v3/v5 (Required for v3/v5)
 
   EXAMPLES:
-      idgen -u4                           Generate a random UUID v4 (default)
-      idgen -u1                           Generate a time-based UUID v1
+      idgen -u4                                       Generate a random UUID v4 (default)
+      idgen -u1                                       Generate a time-based UUID v1
       idgen -u3 --namespace DNS --name example.com    Generate a v3 UUID
       idgen -u5 --namespace DNS --name example.com    Generate a v5 UUID
-      idgen -s -u4                        Generate a simple UUID v4 without hyphens
-      idgen -u -u4                        Generate a UUID v4 with URN format
-      idgen -n 10                         Generate a NanoID of length 10
-      idgen -o                            Generate a MongoDB ObjectID
-      idgen -c 5                          Generate 5 UUIDs
-      idgen -p 'test-' -c 3               Generate 3 UUIDs with prefix 'test-'
-      idgen -nb -u4                       Generate a UUID v4 without banner
+      idgen -s -u4                                    Generate a simple UUID v4 without hyphens
+      idgen -u -u4                                    Generate a UUID v4 with URN format
+      idgen -n                                        Generate a NanoID of default length (21)
+      idgen -n 10                                     Generate a NanoID of length 10
+      idgen -o                                        Generate a MongoDB ObjectID
+      idgen -c1                                       Generate a version 1 CUID
+      idgen -c2                                       Generate a version 2 CUID
+      idgen -l                                        Generate a ULID
+      idgen -c 5                                      Generate 5 UUIDs
+      idgen -p 'test-' -c 3                           Generate 3 UUIDs with prefix 'test-'
+      idgen -nb -u4                                   Generate a UUID v4 without banner
   ",
         VERSION
     )
@@ -179,7 +206,7 @@ fn print_banner() {
 | | (_| | (_| |  __/ | | |
 |_|\__,_|\__, |\___|_| |_|
          |___/"#;
-    print!("{}\n", banner);  // Changed to print! and explicit \n
+    print!("{}\n", banner); // Changed to print! and explicit \n
 }
 
 #[cfg(test)]
@@ -195,7 +222,7 @@ mod tests {
     #[test]
     fn test_default_format() {
         let args = with_args(vec![]);
-        let mut version = UuidVersion::V4;
+        let version = UuidVersion::V4;
         let mut format = IDFormat::Hyphenated(version);
         let mut count = 1;
         let mut help = false;
@@ -337,7 +364,13 @@ mod tests {
 
     #[test]
     fn test_uuid_v3_parameters() {
-        let args = with_args(vec!["--uuid3", "--namespace", "DNS", "--name", "example.com"]);
+        let args = with_args(vec![
+            "--uuid3",
+            "--namespace",
+            "DNS",
+            "--name",
+            "example.com",
+        ]);
         let mut version = UuidVersion::V4;
         let mut format = IDFormat::Hyphenated(version);
         let mut namespace: Option<String> = None;
