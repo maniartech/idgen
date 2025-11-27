@@ -10,20 +10,36 @@ A lightweight command-line utility for generating various types of unique identi
 This tool is designed for developers who need to generate various types of IDs during development, testing, or data migration.
 
 ## Table of Contents
-- [Features](#features)
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [ID Types and Use Cases](#id-types-and-use-cases)
-  - [UUID (Universal Unique Identifier)](#uuid-universal-unique-identifier)
-  - [MongoDB ObjectID](#mongodb-objectid)
-  - [NanoID](#nanoid)
-- [Usage Guide](#usage-guide)
-  - [Command Options](#command-options)
-  - [Format Options](#format-options)
-  - [Examples](#examples)
-  - [Common UUID Namespaces](#common-uuid-namespaces)
-- [Contributing](#contributing)
-- [License](#license)
+- [idgen](#idgen)
+  - [Table of Contents](#table-of-contents)
+  - [Features](#features)
+  - [Installation](#installation)
+  - [Quick Start](#quick-start)
+  - [Real-World Scenarios](#real-world-scenarios)
+    - [Manual Database Inserts \& Seeding](#manual-database-inserts--seeding)
+    - [API Testing \& Development](#api-testing--development)
+    - [Scripting \& Automation](#scripting--automation)
+    - [Configuration \& Secrets](#configuration--secrets)
+    - [Verification \& Debugging](#verification--debugging)
+    - [Distributed Tracing](#distributed-tracing)
+    - [Mock Data Generation](#mock-data-generation)
+    - [Cloud Resource Naming](#cloud-resource-naming)
+  - [ID Types and Use Cases](#id-types-and-use-cases)
+    - [UUID (Universal Unique Identifier)](#uuid-universal-unique-identifier)
+      - [UUID v1 (Time-based)](#uuid-v1-time-based)
+      - [UUID v4 (Random)](#uuid-v4-random)
+      - [UUID v3/v5 (Name-based)](#uuid-v3v5-name-based)
+    - [MongoDB ObjectID](#mongodb-objectid)
+    - [NanoID](#nanoid)
+    - [CUID (Collision-resistant Unique Identifier)](#cuid-collision-resistant-unique-identifier)
+    - [ULID (Universally Unique Lexicographically Sortable Identifier)](#ulid-universally-unique-lexicographically-sortable-identifier)
+  - [Usage Guide](#usage-guide)
+    - [Command Options](#command-options)
+    - [Format Options](#format-options)
+    - [Examples](#examples)
+    - [Common UUID Namespaces](#common-uuid-namespaces)
+  - [Contributing](#contributing)
+  - [License](#license)
 
 ## Features
 - Generate UUIDs with support for all major versions (v1, v3, v4, v5)
@@ -33,7 +49,7 @@ This tool is designed for developers who need to generate various types of IDs d
 - Generate ULIDs
 - Multiple output formats (simple, hyphenated, URN)
 - Support for batch generation
-- Custom prefix support
+- Custom prefix and suffix support
 - Banner-free mode for script integration
 
 ## Installation
@@ -69,6 +85,74 @@ idgen -nb
 Generate multiple IDs:
 ```bash
 idgen -c 3
+```
+
+## Real-World Scenarios
+
+### Manual Database Inserts & Seeding
+Quickly generate IDs for manual SQL `INSERT` statements or when creating seed data files (CSV/JSON) for development databases.
+
+```bash
+# Generate 5 UUIDs for a seed file
+idgen -u4 -c 5
+```
+
+### API Testing & Development
+Generate unique IDs on the fly when testing APIs with `curl` or Postman, especially for endpoints that require a unique `request_id` or `transaction_id`.
+
+```bash
+# Use in a curl request
+curl -X POST https://api.example.com/users \
+  -H "X-Request-ID: $(idgen -u4 -s)" \
+  -d '{"name": "John"}'
+```
+
+### Scripting & Automation
+Use in CI/CD pipelines or shell scripts to generate unique filenames, deployment tags, or temporary resource identifiers.
+
+```bash
+# Create a unique temporary file
+touch "temp_$(idgen -n 10).log"
+```
+
+### Configuration & Secrets
+Generate unique strings for configuration files, such as `JWT_SECRET`, `API_KEY`, or session secrets during project setup.
+
+```bash
+# Generate a strong, random secret
+idgen -n 64
+```
+
+### Verification & Debugging
+Verify the output of deterministic IDs (like UUID v5) to ensure your application logic matches the standard.
+
+```bash
+# Verify UUID v5 generation
+idgen -u5 --namespace URL --name "https://example.com"
+```
+
+### Distributed Tracing
+Generate a unique trace ID to manually tag a request flow across microservices when debugging.
+
+```bash
+# Generate a trace ID (UUID v4)
+idgen -u4 -s
+```
+
+### Mock Data Generation
+Generate IDs for JSON mock files used in frontend development.
+
+```bash
+# Generate 10 IDs for a mock user list
+idgen -n 10 -c 10
+```
+
+### Cloud Resource Naming
+Generate unique tags for cloud resources (AWS/Azure/GCP) during manual provisioning or Terraform/Ansible runs.
+
+```bash
+# Generate a unique suffix for an S3 bucket
+echo "my-bucket-$(idgen -n 8 | tr '[:upper:]' '[:lower:]')"
 ```
 
 ## ID Types and Use Cases
@@ -142,6 +226,7 @@ FORMAT OPTIONS:
 OTHER OPTIONS:
     -c --count      Number of IDs to generate (Default: 1)
     -p --prefix     Add prefix to generated IDs
+    -f --suffix     Add suffix to generated IDs
     --namespace     UUID namespace for v3/v5
     --name         Name string for v3/v5
 ```
@@ -172,6 +257,7 @@ idgen -l                     # ULID
 # Output options
 idgen -c 5                  # Generate 5 IDs
 idgen -p 'test-' -c 3       # Add prefix
+idgen -f '.log'             # Add suffix
 idgen -nb                   # No banner output
 ```
 
