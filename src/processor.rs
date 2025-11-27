@@ -11,6 +11,7 @@ pub fn parse_n_process() {
     let mut show_version = false;
     let mut len: Option<usize> = None;
     let mut prefix = "";
+    let mut suffix = "";
     let mut namespace: Option<String> = None;
     let mut name: Option<String> = None;
     let mut show_banner = true;
@@ -78,6 +79,8 @@ pub fn parse_n_process() {
             len = arg.parse::<usize>().ok();
         } else if lastcmd == "-p" || lastcmd == "--prefix" {
             prefix = arg;
+        } else if lastcmd == "-f" || lastcmd == "--suffix" {
+            suffix = arg;
         } else if lastcmd == "--namespace" {
             namespace = Some(arg.to_string());
         } else if lastcmd == "--name" {
@@ -104,6 +107,7 @@ pub fn parse_n_process() {
         len,
         count,
         prefix,
+        suffix,
         namespace.as_deref(),
         name.as_deref(),
     ) {
@@ -117,12 +121,13 @@ fn print_uuid(
     len: Option<usize>,
     count: i32,
     prefix: &str,
+    suffix: &str,
     namespace: Option<&str>,
     name: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error>> {
     for i in 0..count {
         let id = new_id(&id_format, len, namespace, name)?;
-        print!("{}{}", prefix, id);
+        print!("{}{}{}", prefix, id, suffix);
         if i < count - 1 {
             print!("\n");
         }
@@ -172,6 +177,7 @@ fn print_help() {
   OTHER OPTIONS:
       -c --count    <num>                             Number of IDs to generate (Default: 1)
       -p --prefix   <str>                             Prefix for the generated IDs (Default: None)
+      -f --suffix   <str>                             Suffix for the generated IDs (Default: None)
          --namespace <str>                            Namespace UUID for v3/v5 (Required for v3/v5)
          --name     <str>                             Name string for v3/v5 (Required for v3/v5)
 
@@ -190,6 +196,7 @@ fn print_help() {
       idgen -l                                        Generate a ULID
       idgen -c 5                                      Generate 5 UUIDs
       idgen -p 'test-' -c 3                           Generate 3 UUIDs with prefix 'test-'
+      idgen -f '.log' -n                              Generate a NanoID with suffix '.log'
       idgen -nb -u4                                   Generate a UUID v4 without banner
   ",
         VERSION
@@ -360,6 +367,22 @@ mod tests {
         });
 
         assert_eq!(prefix, "test-");
+    }
+
+    #[test]
+    fn test_suffix_option() {
+        let args = with_args(vec!["--suffix", ".log"]);
+        let mut suffix = "";
+        let mut lastcmd = String::new();
+
+        args.iter().enumerate().for_each(|(_, arg)| {
+            if lastcmd == "-f" || lastcmd == "--suffix" {
+                suffix = arg;
+            }
+            lastcmd = arg.clone();
+        });
+
+        assert_eq!(suffix, ".log");
     }
 
     #[test]

@@ -103,7 +103,7 @@ Generate unique IDs on the fly when testing APIs with `curl` or Postman, especia
 ```bash
 # Use in a curl request
 curl -X POST https://api.example.com/users \
-  -H "X-Request-ID: $(idgen -u4 -s)" \
+  -H "X-Request-ID: $(idgen -u4 -s -nb)" \
   -d '{"name": "John"}'
 ```
 
@@ -112,7 +112,7 @@ Use in CI/CD pipelines or shell scripts to generate unique filenames, deployment
 
 ```bash
 # Create a unique temporary file
-touch "temp_$(idgen -n 10).log"
+touch $(idgen -n 10 -p temp_ -f .log -nb)
 ```
 
 ### Configuration & Secrets
@@ -145,6 +145,9 @@ Generate IDs for JSON mock files used in frontend development.
 ```bash
 # Generate 10 IDs for a mock user list
 idgen -n 10 -c 10
+
+# Generate mock email addresses
+idgen -n 8 -f @example.com -c 5 -nb
 ```
 
 ### Cloud Resource Naming
@@ -152,7 +155,7 @@ Generate unique tags for cloud resources (AWS/Azure/GCP) during manual provision
 
 ```bash
 # Generate a unique suffix for an S3 bucket
-echo "my-bucket-$(idgen -n 8 | tr '[:upper:]' '[:lower:]')"
+idgen -n 8 -p my-bucket- -nb | tr '[:upper:]' '[:lower:]'
 ```
 
 ## ID Types and Use Cases
