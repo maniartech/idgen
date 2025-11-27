@@ -1,7 +1,7 @@
 [package]
 authors = [ "Mohamed Aamir Maniar <aamir.maniar@maniartech.com>" ]
 edition = "2021"
-name = "idgen"
+name = "idgen-cli"
 version = "1.4.0"
 description = "A lightweight, powerful CLI tool for generating UUIDs (v1-v5), NanoIDs, CUIDs, ULIDs, and MongoDB ObjectIDs."
 license = "MIT"
@@ -9,6 +9,10 @@ repository = "https://github.com/maniartech/idgen"
 readme = "README.md"
 keywords = ["uuid", "cli", "generator", "unique", "id"]
 categories = ["command-line-utilities", "development-tools"]
+
+[[bin]]
+name = "idgen"
+path = "src/main.rs"
 
 [dependencies]
 bson = { version = "3.0.0", default-features = false, features = [
