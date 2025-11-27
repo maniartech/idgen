@@ -1,5 +1,6 @@
 # idgen
 
+[![GitHub release](https://img.shields.io/github/v/release/maniartech/idgen)](https://github.com/maniartech/idgen/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Rust Edition](https://img.shields.io/badge/Rust_Edition-2021-orange.svg)](https://www.rust-lang.org/)
 
