@@ -23,6 +23,22 @@ fn test_inspect_uuid_v1() {
 }
 
 #[test]
+fn test_inspect_uuid_v7() {
+    let sample = uuid::Builder::from_unix_timestamp_millis(
+        1_708_484_800_123,
+        &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+    )
+    .into_uuid()
+    .to_string();
+
+    let result = inspect_id(&sample);
+    assert!(result.valid);
+    assert_eq!(result.id_type, "UUID");
+    assert_eq!(result.version, Some("SortRand".to_string()));
+    assert!(result.timestamp.is_some());
+}
+
+#[test]
 fn test_inspect_uuid_simple_format() {
     // UUID without hyphens
     let result = inspect_id("550e8400e29b44d4a716446655440000");

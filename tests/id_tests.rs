@@ -135,6 +135,34 @@ fn test_uuid_v1_urn() {
 }
 
 // ============================================
+// UUID v7 Tests (Time-ordered)
+// ============================================
+
+#[test]
+fn test_uuid_v7_simple() {
+    let id = new_id(&IDFormat::Simple(UuidVersion::V7), None, None, None).unwrap();
+    let parsed = uuid::Uuid::parse_str(&id).unwrap();
+    assert_eq!(parsed.get_version(), Some(uuid::Version::SortRand));
+    assert_eq!(id.len(), 32);
+}
+
+#[test]
+fn test_uuid_v7_hyphenated() {
+    let id = new_id(&IDFormat::Hyphenated(UuidVersion::V7), None, None, None).unwrap();
+    let parsed = uuid::Uuid::parse_str(&id).unwrap();
+    assert_eq!(parsed.get_version(), Some(uuid::Version::SortRand));
+    assert_eq!(id.len(), 36);
+}
+
+#[test]
+fn test_uuid_v7_urn() {
+    let id = new_id(&IDFormat::URN(UuidVersion::V7), None, None, None).unwrap();
+    let parsed = uuid::Uuid::parse_str(&id).unwrap();
+    assert_eq!(parsed.get_version(), Some(uuid::Version::SortRand));
+    assert!(id.starts_with("urn:uuid:"));
+}
+
+// ============================================
 // UUID v5 Error Cases
 // ============================================
 

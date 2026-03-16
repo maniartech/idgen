@@ -40,6 +40,17 @@ fn test_exit_code_success_uuid_v4() {
 }
 
 #[test]
+fn test_exit_code_success_uuid_v7() {
+    let output = Command::new(idgen_bin())
+        .args(["-t", "uuid7"])
+        .output()
+        .expect("Failed to execute command");
+
+    assert!(output.status.success());
+    assert_eq!(output.status.code(), Some(0));
+}
+
+#[test]
 fn test_exit_code_success_nanoid() {
     let output = Command::new(idgen_bin())
         .args(["-t", "nanoid"])
