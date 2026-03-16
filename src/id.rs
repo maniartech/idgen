@@ -47,6 +47,7 @@ pub enum UuidVersion {
     V3,
     V4,
     V5,
+    V7,
 }
 
 /// Internal enum for CUID versions
@@ -130,6 +131,7 @@ fn generate_uuid(
             )?;
             Ok(Uuid::new_v5(&namespace, name.as_bytes()))
         }
+        UuidVersion::V7 => Ok(Uuid::now_v7()),
     }
 }
 

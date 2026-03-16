@@ -20,26 +20,12 @@ pub fn inspect_id(id: &str) -> InspectionResult {
     if let Ok(uuid) = Uuid::parse_str(id) {
         let version = uuid.get_version().map(|v| format!("{:?}", v));
         let variant = format!("{:?}", uuid.get_variant());
-
-        // Extract timestamp for v1 and v7 (if supported by crate, v1 is standard)
-        // Note: uuid crate v1.0+ supports getting timestamp from v1, v6, v7
-        let timestamp = if let Some(uuid::Version::Mac) = uuid.get_version() {
-            // UUID v1 timestamp extraction is complex without direct crate support in older versions
-            // For now, we'll skip complex timestamp extraction for UUIDs to keep it simple
-            // unless we upgrade to uuid v1.0+ features explicitly.
-            // Actually, let's try a best effort for v1 if the crate allows,
-            // but the current uuid crate version in Cargo.toml is 1.18.1 which is good.
-
-            // uuid 1.x exposes get_timestamp() which returns a Timestamp struct
-            uuid.get_timestamp().and_then(|ts| {
-                let (secs, nanos) = ts.to_unix();
-                Utc.timestamp_opt(secs as i64, nanos)
-                    .single()
-                    .map(|dt| dt.to_rfc3339())
-            })
-        } else {
-            None
-        };
+        let timestamp = uuid.get_timestamp().and_then(|ts| {
+            let (secs, nanos) = ts.to_unix();
+            Utc.timestamp_opt(secs as i64, nanos)
+                .single()
+                .map(|dt| dt.to_rfc3339())
+        });
 
         return InspectionResult {
             valid: true,

@@ -5,7 +5,7 @@
 [![Rust Edition](https://img.shields.io/badge/Rust_Edition-2021-orange.svg)](https://www.rust-lang.org/)
 
 A lightweight command-line utility for generating and inspecting various types of unique identifiers:
-- UUID (versions 1, 3, 4, and 5)
+- UUID (versions 1, 3, 4, 5, and 7)
 - NanoID
 - CUID (versions 1 and 2)
 - ULID
@@ -51,7 +51,7 @@ This tool is designed for developers who need to generate or analyze various typ
   - [License](#license)
 
 ## Features
-- Generate UUIDs with support for all major versions (v1, v3, v4, v5)
+- Generate UUIDs with support for all major versions (v1, v3, v4, v5, v7)
 - Create MongoDB-style ObjectIDs
 - Generate URL-safe NanoIDs with configurable length
 - Generate CUIDs (v1 and v2)
@@ -124,6 +124,11 @@ idgen -b
 Generate multiple IDs:
 ```bash
 idgen -c 3
+```
+
+Generate a sortable UUID (v7):
+```bash
+idgen -t uuid7
 ```
 
 ## Real-World Scenarios
@@ -232,6 +237,11 @@ Standard 128-bit identifiers with multiple versions for different needs:
 - Example: `550e8400-e29b-44d4-a716-446655440000`
 - Best for: Default choice, database keys, session IDs
 
+#### UUID v7 (Time-ordered)
+- Format: Unix timestamp + random data
+- Example: `019586ab-4d3f-7d2c-b6a4-4d1d9c5b6f7a`
+- Best for: Database keys, chronological ordering, log/event streams
+
 #### UUID v3/v5 (Name-based)
 - v3 uses MD5, v5 uses SHA-1 (preferred)
 - Example: `cfbff0d1-9375-5685-968c-48ce8b15ae17`
@@ -273,7 +283,7 @@ Commands:
   help         Print this message or the help of the given subcommand(s)
 
 Options:
-  -t, --type <ID_TYPE>         Type of ID to generate [default: uuid4] [possible values: uuid1, uuid3, uuid4, uuid5, nanoid, cuid1, cuid2, ulid, objectid]
+  -t, --type <ID_TYPE>         Type of ID to generate [default: uuid4] [possible values: uuid1, uuid3, uuid4, uuid5, uuid7, nanoid, cuid1, cuid2, ulid, objectid]
   -f, --format <FORMAT>        Output format for UUIDs [default: hyphenated] [possible values: hyphenated, simple, urn]
   -c, --count <COUNT>          Number of IDs to generate [default: 1]
   -l, --length <LENGTH>        Length for NanoID (default: 21)
@@ -289,6 +299,7 @@ Options:
 EXAMPLES:
     idgen                                       Generate a random UUID v4 (default)
     idgen -t uuid1                              Generate a time-based UUID v1
+    idgen -t uuid7                              Generate a time-ordered UUID v7
     idgen -t uuid3 --namespace DNS --name example.com
     idgen -t nanoid -l 10                       Generate a NanoID of length 10
     idgen -t ulid                               Generate a ULID
@@ -312,6 +323,7 @@ Each ID can be formatted in different ways:
 # Generate IDs (default: UUID v4)
 idgen                              # Random UUID v4
 idgen -t uuid1                     # Time-based UUID v1
+idgen -t uuid7                     # Time-ordered UUID v7
 idgen -t uuid5 --namespace DNS --name example.com  # Name-based UUID v5
 
 # ID Types
@@ -364,7 +376,7 @@ For UUID v3/v5, use these standard namespaces:
 
 | Feature | idgen | uuidgen | uuid (npm) | nanoid (npm) |
 |---------|-------|---------|------------|--------------|
-| UUID v1-v5 | ✅ | ✅ | ✅ | ❌ |
+| UUID v1-v5, v7 | ✅ | ✅ | ✅ | ❌ |
 | NanoID | ✅ | ❌ | ❌ | ✅ |
 | CUID v1/v2 | ✅ | ❌ | ❌ | ❌ |
 | ULID | ✅ | ❌ | ❌ | ❌ |
@@ -375,7 +387,7 @@ For UUID v3/v5, use these standard namespaces:
 | Single Binary | ✅ | ✅ | ❌ | ❌ |
 
 **Key advantages:**
-- **All-in-one**: Single tool for 9 ID types instead of multiple utilities
+- **All-in-one**: Single tool for 10 ID types instead of multiple utilities
 - **ID Inspector**: Unique feature to analyze and identify unknown IDs
 - **Fast**: Native Rust binary with no interpreter overhead
 - **Portable**: No Node.js, Python, or other runtime required
