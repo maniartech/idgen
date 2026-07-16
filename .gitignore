@@ -5,3 +5,6 @@
 
 # Publish history (local tracking)
 scripts/.publish-history
+
+# Local planning notes (kept on disk, deliberately not tracked)
+/docs/id-formats-roadmap.md
