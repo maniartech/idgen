@@ -1,5 +1,22 @@
+use clap::builder::styling::{AnsiColor, Effects, Styles};
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use clap_complete::Shell;
+
+/// Colour scheme for help and error output.
+///
+/// Applied only when clap's colour choice resolves to "on". That resolution is
+/// automatic: colour is emitted for an interactive terminal and suppressed when
+/// stdout is a pipe or file — which is what CI runners give us — so build logs stay
+/// plain without any CI-specific detection. `NO_COLOR`, `CLICOLOR` and `TERM=dumb`
+/// are honoured by the same machinery.
+const HELP_STYLES: Styles = Styles::styled()
+    .header(AnsiColor::Green.on_default().effects(Effects::BOLD))
+    .usage(AnsiColor::Green.on_default().effects(Effects::BOLD))
+    .literal(AnsiColor::Cyan.on_default().effects(Effects::BOLD))
+    .placeholder(AnsiColor::Cyan.on_default())
+    .error(AnsiColor::Red.on_default().effects(Effects::BOLD))
+    .valid(AnsiColor::Cyan.on_default().effects(Effects::BOLD))
+    .invalid(AnsiColor::Yellow.on_default().effects(Effects::BOLD));
 
 /// A lightweight, powerful CLI tool for generating and inspecting unique identifiers.
 ///
@@ -9,6 +26,7 @@ use clap_complete::Shell;
 #[command(author = "Mohamed Aamir Maniar <aamir.maniar@maniartech.com>")]
 #[command(version)]
 #[command(about = "Generate and inspect unique identifiers", long_about = None)]
+#[command(styles = HELP_STYLES)]
 #[command(after_help = "EXAMPLES:
     idgen                                       Generate a random UUID v4 (default)
     idgen -t uuid1                              Generate a time-based UUID v1
