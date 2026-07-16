@@ -5,6 +5,11 @@ The runbook for cutting a release and publishing it.
 ## TL;DR
 
 ```bash
+# 1. write and commit the notes first — release.sh refuses to tag without them
+$EDITOR docs/release/v1.5.0.md
+git add docs/release/v1.5.0.md && git commit -m "docs: add v1.5.0 release notes"
+git push origin master
+
 ./scripts/release.sh 1.5.0 --dry-run   # see what would happen
 ./scripts/release.sh 1.5.0             # tag it; GitHub Actions builds binaries
 # wait ~5-10 min for the build to go green
@@ -22,13 +27,31 @@ Check where things stand at any point:
 
 The full walkthrough. Replace `X.Y.Z` with the version you are releasing.
 
-Only one step in here cannot be undone — step 6. Everything before it is
+Only one step in here cannot be undone — step 7 (crates.io). Everything before it is
 recoverable, and every step is safe to re-run.
 
-### 1. Get master pushed and clean
+### 1. Write the release notes
+
+**Do this first.** `release.sh` refuses to tag without them.
 
 ```bash
-cd /path/to/idgen
+$EDITOR docs/release/vX.Y.Z.md
+```
+
+The file must exist, be non-empty, and be **committed** — the workflow checks
+out the tag and reads it from there, so a file that only exists on your disk is
+invisible to it. Anything ignored by `.gitignore` is rejected for the same
+reason.
+
+Populate it by hand, or copy the shape of a previous release. What has to be in
+there: anything that changes generated output, credits for outside
+contributors, and the install block. See [Version numbers](#version-numbers).
+
+### 2. Commit and push
+
+```bash
+git add docs/release/vX.Y.Z.md
+git commit -m "docs: add vX.Y.Z release notes"
 git status                 # must be clean
 git push origin master     # release.sh will not run against an unpushed master
 ```
@@ -37,7 +60,7 @@ git push origin master     # release.sh will not run against an unpushed master
 diverged from origin. Both checks exist so the tag you push corresponds to
 something other people can actually fetch.
 
-### 2. Dry run
+### 3. Dry run
 
 ```bash
 ./scripts/release.sh X.Y.Z --dry-run
@@ -47,10 +70,10 @@ Changes nothing — no edits, no commits, no tags, no pushes. It prints each ste
 prefixed with `would run:` so you can see the plan.
 
 If the version in `Cargo.toml` is already `X.Y.Z` (say you bumped it by hand in
-an earlier PR), step 4 reports *"Already at X.Y.Z — nothing to change"*. That is
+an earlier PR), step 5 reports *"Already at X.Y.Z — nothing to change"*. That is
 expected, not a problem.
 
-### 3. Release
+### 4. Release
 
 ```bash
 ./scripts/release.sh X.Y.Z
@@ -63,7 +86,7 @@ triggers the build.
 If it fails partway — a test breaks, the network drops — fix the cause and run
 the exact same command again. It picks up from wherever it got to.
 
-### 4. Wait for the build
+### 5. Wait for the build
 
 ```bash
 gh run watch                      # or: <repo>/actions
@@ -72,26 +95,23 @@ gh run watch                      # or: <repo>/actions
 Takes roughly 5-10 minutes and produces four binaries: Linux, Windows, macOS
 Intel, and macOS Apple Silicon.
 
-**Do not skip ahead to step 7.** The manifests download these assets to compute
+**Do not skip ahead to step 8.** The manifests download these assets to compute
 their SHA256 hashes, so they have to exist first.
 
 If a build fails here, you have a pushed tag with an incomplete release. Fix the
 cause and cut a *new* patch version — do not move the tag (see
 [Tag conflicts](#tag-conflicts-are-not-resolved-for-you)).
 
-### 5. Release notes
+### 6. Check the published notes
 
-The workflow creates the GitHub Release automatically. Attach notes to it:
+Nothing to do — the workflow publishes `docs/release/vX.Y.Z.md` as the Release
+body automatically. Just confirm it rendered:
 
 ```bash
-gh release edit vX.Y.Z --notes-file notes.md
+gh release view vX.Y.Z --web
 ```
 
-Or edit in the browser at `<repo>/releases/tag/vX.Y.Z`. See
-[Version numbers](#version-numbers) for what has to be called out — anything
-that changes generated output belongs here, prominently.
-
-### 6. Publish to crates.io
+### 7. Publish to crates.io
 
 ```bash
 ./scripts/publish.sh crates
@@ -106,7 +126,7 @@ never replaced or re-uploaded. Everything up to here can be redone; this cannot.
 Needs `cargo login` once, with a token from <https://crates.io/me> carrying the
 `publish-new` and `publish-update` scopes.
 
-### 7. Regenerate the package manifests
+### 8. Regenerate the package manifests
 
 ```bash
 ./scripts/publish.sh all
@@ -119,7 +139,7 @@ into your tap, bucket, or AUR checkout yourself.
 If you see `PLACEHOLDER_SHA256` in the output, the assets were not downloadable
 yet. Wait and re-run; the hashes fill in. Never hand-edit a placeholder.
 
-### 8. Confirm
+### 9. Confirm
 
 ```bash
 ./scripts/publish.sh status
@@ -171,18 +191,21 @@ scripts read from there. Consequences worth knowing:
 
 ## What release.sh does internally
 
-Reference for the seven steps inside the script — distinct from the walkthrough
+Reference for the eight steps inside the script — distinct from the walkthrough
 above, which is what *you* run. Each is re-runnable:
 
 1. **Branch** — must be on `master`.
 2. **Clean tree** — refuses to release uncommitted work.
-3. **Sync** — fast-forward from `origin/master`. Refuses to merge if the two
+3. **Release notes** — `docs/release/vX.Y.Z.md` must exist, be non-empty, and be
+   tracked by git. Checked here, before anything is changed or pushed, so it
+   fails while failing is free.
+4. **Sync** — fast-forward from `origin/master`. Refuses to merge if the two
    have diverged; cutting a release from a surprise merge is not automatic.
-4. **Version** — sets it in `Cargo.toml`, or skips if it is already correct.
-5. **Tests** — `cargo test --locked`, and refuses to continue if zero tests
+5. **Version** — sets it in `Cargo.toml`, or skips if it is already correct.
+6. **Tests** — `cargo test --locked`, and refuses to continue if zero tests
    report as passed.
-6. **Commit + push** — skips the commit if there is nothing staged.
-7. **Tag + push** — triggers the release workflow.
+7. **Commit + push** — skips the commit if there is nothing staged.
+8. **Tag + push** — triggers the release workflow.
 
 Then GitHub Actions builds Linux, macOS (Intel and Apple Silicon), and Windows
 binaries and attaches them to a GitHub Release.
