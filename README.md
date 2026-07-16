@@ -5,7 +5,7 @@
 [![Rust Edition](https://img.shields.io/badge/Rust_Edition-2021-orange.svg)](https://www.rust-lang.org/)
 
 A lightweight command-line utility for generating and inspecting various types of unique identifiers:
-- UUID (versions 1, 3, 4, 5, and 7)
+- UUID (versions 1, 3, 4, 5, 6, and 7 — including the RFC 9562 sortable versions)
 - NanoID
 - CUID (versions 1 and 2)
 - ULID
@@ -36,6 +36,8 @@ This tool is designed for developers who need to generate or analyze various typ
     - [UUID (Universal Unique Identifier)](#uuid-universal-unique-identifier)
       - [UUID v1 (Time-based)](#uuid-v1-time-based)
       - [UUID v4 (Random)](#uuid-v4-random)
+      - [UUID v7 (Time-ordered) — recommended for database keys](#uuid-v7-time-ordered--recommended-for-database-keys)
+      - [UUID v6 (Time-based, sortable)](#uuid-v6-time-based-sortable)
       - [UUID v3/v5 (Name-based)](#uuid-v3v5-name-based)
     - [MongoDB ObjectID](#mongodb-objectid)
     - [NanoID](#nanoid)
@@ -51,7 +53,8 @@ This tool is designed for developers who need to generate or analyze various typ
   - [License](#license)
 
 ## Features
-- Generate UUIDs with support for all major versions (v1, v3, v4, v5, v7)
+- Generate UUIDs with support for all major versions (v1, v3, v4, v5, v6, v7)
+- **Sortable UUIDs (v6/v7)** per RFC 9562 — time-ordered, index-friendly database keys
 - Create MongoDB-style ObjectIDs
 - Generate URL-safe NanoIDs with configurable length
 - Generate CUIDs (v1 and v2)
@@ -231,16 +234,28 @@ Standard 128-bit identifiers with multiple versions for different needs:
 - Format: Timestamp + node ID based
 - Example: `550e8400-e29b-11d4-a716-446655440000`
 - Best for: Logging, temporal ordering, distributed systems
+- Note: v1 stores its timestamp split across fields, so v1 IDs do **not** sort
+  chronologically. If you want sortability, use v7.
 
 #### UUID v4 (Random)
 - Format: Random numbers
 - Example: `550e8400-e29b-44d4-a716-446655440000`
-- Best for: Default choice, database keys, session IDs
+- Best for: Default choice, session IDs
 
-#### UUID v7 (Time-ordered)
-- Format: Unix timestamp + random data
+#### UUID v7 (Time-ordered) — recommended for database keys
+- Format: 48-bit Unix millisecond timestamp + 74 random bits
 - Example: `019586ab-4d3f-7d2c-b6a4-4d1d9c5b6f7a`
 - Best for: Database keys, chronological ordering, log/event streams
+- Standardised in RFC 9562 (2024). Because the timestamp leads, string and byte
+  ordering both match creation order — so inserts land at the end of a B-tree index
+  instead of scattering across it the way v4 does. A drop-in replacement for v4 that
+  is friendlier to your indexes, with no configuration or coordination required.
+
+#### UUID v6 (Time-based, sortable)
+- Format: v1's fields with the timestamp reordered most-significant-first
+- Example: `1f181298-9620-6519-b560-4dff09331797`
+- Best for: Migrating existing v1 data to something sortable
+- For new systems prefer v7 — v6 exists mainly as a v1 upgrade path.
 
 #### UUID v3/v5 (Name-based)
 - v3 uses MD5, v5 uses SHA-1 (preferred)
@@ -283,7 +298,7 @@ Commands:
   help         Print this message or the help of the given subcommand(s)
 
 Options:
-  -t, --type <ID_TYPE>         Type of ID to generate [default: uuid4] [possible values: uuid1, uuid3, uuid4, uuid5, uuid7, nanoid, cuid1, cuid2, ulid, objectid]
+  -t, --type <ID_TYPE>         Type of ID to generate [default: uuid4] [possible values: uuid1, uuid3, uuid4, uuid5, uuid6, uuid7, nanoid, cuid1, cuid2, ulid, objectid]
   -f, --format <FORMAT>        Output format for UUIDs [default: hyphenated] [possible values: hyphenated, simple, urn]
   -c, --count <COUNT>          Number of IDs to generate [default: 1]
   -l, --length <LENGTH>        Length for NanoID (default: 21)
@@ -323,8 +338,12 @@ Each ID can be formatted in different ways:
 # Generate IDs (default: UUID v4)
 idgen                              # Random UUID v4
 idgen -t uuid1                     # Time-based UUID v1
-idgen -t uuid7                     # Time-ordered UUID v7
+idgen -t uuid7                     # Time-ordered UUID v7 (recommended for DB keys)
+idgen -t uuid6                     # Sortable UUID v6 (v1 migration path)
 idgen -t uuid5 --namespace DNS --name example.com  # Name-based UUID v5
+
+# v7 IDs sort chronologically, so a plain sort restores creation order
+idgen -t uuid7 -c 5 | sort         # Already in order
 
 # ID Types
 idgen -t nanoid                    # NanoID (21 chars)
@@ -376,7 +395,8 @@ For UUID v3/v5, use these standard namespaces:
 
 | Feature | idgen | uuidgen | uuid (npm) | nanoid (npm) |
 |---------|-------|---------|------------|--------------|
-| UUID v1-v5, v7 | ✅ | ✅ | ✅ | ❌ |
+| UUID v1-v5 | ✅ | ✅ | ✅ | ❌ |
+| UUID v6/v7 (sortable) | ✅ | ✅ | ✅ | ❌ |
 | NanoID | ✅ | ❌ | ❌ | ✅ |
 | CUID v1/v2 | ✅ | ❌ | ❌ | ❌ |
 | ULID | ✅ | ❌ | ❌ | ❌ |
@@ -387,7 +407,7 @@ For UUID v3/v5, use these standard namespaces:
 | Single Binary | ✅ | ✅ | ❌ | ❌ |
 
 **Key advantages:**
-- **All-in-one**: Single tool for 10 ID types instead of multiple utilities
+- **All-in-one**: Single tool for 11 ID types instead of multiple utilities
 - **ID Inspector**: Unique feature to analyze and identify unknown IDs
 - **Fast**: Native Rust binary with no interpreter overhead
 - **Portable**: No Node.js, Python, or other runtime required

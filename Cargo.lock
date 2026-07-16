@@ -519,7 +519,7 @@ dependencies = [
 
 [[package]]
 name = "idgen-cli"
-version = "1.4.1"
+version = "1.5.0"
 dependencies = [
  "bson",
  "chrono",
