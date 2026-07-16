@@ -3,174 +3,301 @@
 # Release script for idgen
 # =========================
 #
-# This script automates the release process for idgen by:
-# 1. Validating the environment (branch, clean working directory)
-# 2. Updating the version in Cargo.toml
-# 3. Running all tests to ensure quality
-# 4. Committing and pushing the version bump
-# 5. Creating and pushing a git tag to trigger GitHub Actions
+# Tags a release and lets GitHub Actions build the binaries.
 #
-# The GitHub Actions workflow (.github/workflows/release.yml) will then:
-# - Build binaries for Linux, macOS, and Windows
-# - Create a GitHub Release with the binaries attached
+#   ./scripts/release.sh 1.5.0        # release 1.5.0
+#   ./scripts/release.sh              # prompt for the version
+#   ./scripts/release.sh 1.5.0 --dry-run   # show what would happen, change nothing
 #
-# Usage:
-#   ./scripts/release.sh [version]
+# WHAT IT DOES
+#   1. Validates the version, the branch, and the working tree
+#   2. Syncs with origin/master
+#   3. Sets the version in Cargo.toml (if it isn't already)
+#   4. Runs the full test suite against the exact lockfile that will ship
+#   5. Commits the version bump (only if there is something to commit)
+#   6. Pushes master
+#   7. Creates and pushes the tag, which triggers .github/workflows/release.yml
 #
-# Examples:
-#   ./scripts/release.sh 1.5.0    # Release version 1.5.0
-#   ./scripts/release.sh          # Interactive mode (prompts for version)
+# The workflow then builds Linux, macOS (Intel + Apple Silicon), and Windows
+# binaries and attaches them to a GitHub Release.
 #
-# Prerequisites:
-#   - Git installed and configured
-#   - Rust/Cargo installed
-#   - Push access to the repository
-#   - Must be on the master branch
-#   - Working directory must be clean (no uncommitted changes)
+# IDEMPOTENCY
+# -----------
+# Every step is safe to re-run. Interrupt this script at any point — network
+# drop, failed test, Ctrl-C — and just run it again with the same version. Each
+# step checks the real state of the world before acting:
 #
-# Version Format:
-#   Use semantic versioning (MAJOR.MINOR.PATCH)
-#   - MAJOR: Breaking changes
-#   - MINOR: New features (backwards compatible)
-#   - PATCH: Bug fixes (backwards compatible)
+#   - Version already set in Cargo.toml?      -> skips the edit
+#   - Nothing staged to commit?               -> skips the commit (not an error)
+#   - Already pushed?                         -> push is a no-op
+#   - Tag exists and points at this commit?   -> skips, reports already released
+#   - Tag exists and points somewhere else?   -> STOPS. See below.
 #
-# After running this script:
-#   1. GitHub Actions will build binaries (~5-10 minutes)
-#   2. A GitHub Release will be created automatically
-#   3. Edit the release notes at: https://github.com/maniartech/idgen/releases
+# A tag that already exists on a *different* commit is a genuine conflict, not
+# something to paper over. The previous version of this script deleted the local
+# and remote tag and recreated it. That is dangerous: the remote tag may already
+# have a published GitHub Release and downloaded binaries attached to it, and
+# moving it silently changes what a published version means for anyone who
+# already installed it. This script refuses and makes you decide. `--force`
+# still exists, but it tells you exactly what it is about to destroy first.
 #
+# WHAT IT DELIBERATELY DOES NOT DO
+# --------------------------------
+# It does not run `cargo update`. The old script did, at step 6 — *after* the
+# tests at step 5. That meant the lockfile you tagged and shipped was never the
+# lockfile you tested. At the time of writing, `cargo update` here would bump 85
+# packages, including a major-version jump of anstream. Dependency updates are a
+# deliberate act with their own commit and their own test run; they are not a
+# side effect of cutting a release.
+#
+# Tests run with `--locked`, which fails if Cargo.lock is out of date rather
+# than quietly rewriting it. What you test is exactly what you ship.
+#
+# PREREQUISITES
+#   - On master, working tree clean, push access
+#   - Cargo.lock committed and in sync with Cargo.toml
+#
+# AFTER RUNNING
+#   1. Watch the build:   <repo>/actions   (~5-10 min)
+#   2. Edit release notes: <repo>/releases/tag/vX.Y.Z
+#   3. Publish to crates.io: ./scripts/publish.sh crates
 
-set -e
+set -euo pipefail
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_common.sh"
 
-# Get version from argument or prompt
-VERSION=$1
+cd "$REPO_ROOT"
 
-if [ -z "$VERSION" ]; then
-    # Get current version from Cargo.toml
-    CURRENT_VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
-    echo -e "${YELLOW}Current version: $CURRENT_VERSION${NC}"
-    read -p "Enter new version (without 'v' prefix): " VERSION
+# ---------------------------------------------------------------------------
+# Arguments
+# ---------------------------------------------------------------------------
+TARGET_VERSION=""
+DRY_RUN=false
+FORCE=false
+
+for arg in "$@"; do
+    case "$arg" in
+        --dry-run) DRY_RUN=true ;;
+        --force)   FORCE=true ;;
+        --help|-h)
+            sed -n '2,60p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+            exit 0
+            ;;
+        -*) die "Unknown option: $arg (try --help)" ;;
+        *)  [ -z "$TARGET_VERSION" ] && TARGET_VERSION="$arg" ;;
+    esac
+done
+
+if [ -z "$TARGET_VERSION" ]; then
+    echo "${YELLOW}Current version: $VERSION${NC}"
+    read -r -p "Enter new version (without 'v' prefix): " TARGET_VERSION
 fi
 
-if [ -z "$VERSION" ]; then
-    echo -e "${RED}Error: Version is required${NC}"
-    exit 1
-fi
+[ -n "$TARGET_VERSION" ] || die "Version is required"
 
-TAG="v$VERSION"
+# Strip an accidental leading v so `release.sh v1.5.0` behaves.
+TARGET_VERSION="${TARGET_VERSION#v}"
 
-echo -e "${GREEN}🚀 Releasing idgen $TAG${NC}"
+is_semver "$TARGET_VERSION" || die \
+    "'$TARGET_VERSION' is not valid semver (expected MAJOR.MINOR.PATCH, e.g. 1.5.0)"
+
+TAG="v$TARGET_VERSION"
+
+$DRY_RUN && echo "${BLUE}${BOLD}DRY RUN${NC} ${BLUE}- nothing will be changed, committed, or pushed${NC}"
+echo "${GREEN}${BOLD}Releasing $CRATE_NAME $TAG${NC}"
 echo ""
 
-# Step 1: Ensure we're on master branch
-echo -e "${YELLOW}[1/7] Checking branch...${NC}"
-BRANCH=$(git branch --show-current)
-if [ "$BRANCH" != "master" ]; then
-    echo -e "${RED}Error: Must be on master branch (currently on '$BRANCH')${NC}"
-    echo -e "${YELLOW}Tip: Run 'git checkout master' first${NC}"
-    exit 1
-fi
-echo -e "${GREEN}✓ On master branch${NC}"
+# run <description> <command...> — honours --dry-run uniformly, so there is one
+# place where "would do" and "does" diverge rather than a $DRY_RUN check
+# scattered through every step.
+run() {
+    local desc=$1; shift
+    if $DRY_RUN; then
+        echo "${GRAY}   would run: $*${NC}"
+    else
+        "$@" || die "$desc failed: $*"
+    fi
+}
 
-# Step 2: Ensure working directory is clean
-echo -e "${YELLOW}[2/7] Checking working directory...${NC}"
+# ---------------------------------------------------------------------------
+# [1/7] Branch
+# ---------------------------------------------------------------------------
+echo "${YELLOW}[1/7] Checking branch...${NC}"
+BRANCH="$(git branch --show-current)"
+if [ "$BRANCH" != "master" ]; then
+    die "Must be on master (currently on '$BRANCH')
+$(hint "git checkout master")"
+fi
+success "On master"
+
+# ---------------------------------------------------------------------------
+# [2/7] Clean tree
+# ---------------------------------------------------------------------------
+echo "${YELLOW}[2/7] Checking working directory...${NC}"
 if [ -n "$(git status --porcelain)" ]; then
-    echo -e "${RED}Error: Working directory has uncommitted changes${NC}"
     echo ""
     git status --short
     echo ""
-    echo -e "${YELLOW}Tip: Commit or stash your changes first:${NC}"
-    echo "  git add . && git commit -m 'your message'"
-    echo "  or"
-    echo "  git stash"
-    exit 1
+    die "Working directory has uncommitted changes. Commit or stash them first."
 fi
-echo -e "${GREEN}✓ Working directory clean${NC}"
+success "Working directory clean"
 
-# Step 3: Pull latest changes
-echo -e "${YELLOW}[3/7] Pulling latest changes from origin...${NC}"
-git pull origin master --quiet
-echo -e "${GREEN}✓ Up to date with origin/master${NC}"
-
-# Step 4: Update version in Cargo.toml
-echo -e "${YELLOW}[4/7] Updating version in Cargo.toml...${NC}"
-OLD_VERSION=$(grep '^version' Cargo.toml | head -1 | sed 's/.*"\(.*\)".*/\1/')
-sed -i "s/^version = \".*\"/version = \"$VERSION\"/" Cargo.toml
-echo -e "${GREEN}✓ Version updated: $OLD_VERSION → $VERSION${NC}"
-
-# Step 5: Run tests
-echo -e "${YELLOW}[5/7] Running tests (this may take a moment)...${NC}"
-if ! cargo test --quiet 2>/dev/null; then
-    echo -e "${RED}Error: Tests failed! Fix the issues before releasing.${NC}"
-    # Revert Cargo.toml change
-    git checkout Cargo.toml
-    exit 1
+# ---------------------------------------------------------------------------
+# [3/7] Sync with origin
+# ---------------------------------------------------------------------------
+echo "${YELLOW}[3/7] Syncing with origin...${NC}"
+run "git fetch" git fetch --quiet origin
+if ! $DRY_RUN; then
+    # --ff-only: if master and origin/master have diverged, stop. Cutting a
+    # release from a surprise merge commit is not something to do silently.
+    git pull --ff-only origin master --quiet \
+        || die "Cannot fast-forward from origin/master — local and remote have diverged.
+$(hint "Reconcile them yourself, then re-run. This script will not merge for you.")"
 fi
-TEST_COUNT=$(cargo test 2>&1 | grep -E "^test result:" | tail -1 | grep -oE "[0-9]+ passed" | grep -oE "[0-9]+")
-echo -e "${GREEN}✓ All $TEST_COUNT tests passed${NC}"
+success "Up to date with origin/master"
 
-# Step 6: Commit version bump
-echo -e "${YELLOW}[6/7] Committing and pushing version bump...${NC}"
-cargo update --quiet 2>/dev/null || true  # Update Cargo.lock
-git add Cargo.toml Cargo.lock
-git commit -m "chore: bump version to $VERSION" --quiet
-git push origin master --quiet
-echo -e "${GREEN}✓ Version bump committed and pushed${NC}"
-
-# Step 7: Create and push tag
-echo -e "${YELLOW}[7/7] Creating and pushing tag $TAG...${NC}"
-if git rev-parse "$TAG" >/dev/null 2>&1; then
-    echo -e "${YELLOW}Tag $TAG already exists. Deleting...${NC}"
-    git tag -d "$TAG"
-    git push origin --delete "$TAG" 2>/dev/null || true
+# ---------------------------------------------------------------------------
+# [4/7] Version (idempotent)
+# ---------------------------------------------------------------------------
+echo "${YELLOW}[4/7] Setting version in Cargo.toml...${NC}"
+if [ "$VERSION" = "$TARGET_VERSION" ]; then
+    # Already correct — someone bumped it by hand, or a previous run of this
+    # script got this far before failing. Either way there is nothing to do,
+    # and that is a success, not an error.
+    success "Already at $TARGET_VERSION — nothing to change"
+else
+    run "version bump" sed -i "s/^version = \".*\"/version = \"$TARGET_VERSION\"/" Cargo.toml
+    if ! $DRY_RUN; then
+        # Re-read rather than trust the sed. A silently-failed bump that still
+        # tags would ship the wrong version number.
+        actual="$(cargo_field '[package]' 'version')"
+        [ "$actual" = "$TARGET_VERSION" ] \
+            || die "Version bump did not apply (Cargo.toml still reads '$actual')"
+        # Keep Cargo.lock's record of our own package in step with Cargo.toml.
+        # Scoped to this package only — this is not a dependency update.
+        cargo update --offline --quiet --package "$CRATE_NAME" 2>/dev/null || true
+    fi
+    success "Version: $VERSION -> $TARGET_VERSION"
 fi
-git tag "$TAG"
-git push origin "$TAG"
-echo -e "${GREEN}✓ Tag $TAG created and pushed${NC}"
 
+# ---------------------------------------------------------------------------
+# [5/7] Tests
+# ---------------------------------------------------------------------------
+echo "${YELLOW}[5/7] Running tests (--locked, this may take a moment)...${NC}"
+if $DRY_RUN; then
+    echo "${GRAY}   would run: cargo test --locked${NC}"
+else
+    TEST_OUTPUT="$(cargo test --locked 2>&1)" || {
+        echo "$TEST_OUTPUT" | tail -30
+        # Leave no half-applied bump behind on failure.
+        git checkout -- Cargo.toml Cargo.lock 2>/dev/null || true
+        die "Tests failed. Fix them before releasing. (Cargo.toml reverted.)"
+    }
+    TEST_COUNT="$(echo "$TEST_OUTPUT" | count_passed_tests)"
+    # A zero count means the counting broke or nothing ran. Either way this is
+    # not a green light — the old script printed "All 0 tests passed" and
+    # sailed on.
+    [ "$TEST_COUNT" -gt 0 ] \
+        || die "No tests reported as passed — refusing to release.
+$(hint "Run 'cargo test' by hand and check the output.")"
+    success "All $TEST_COUNT tests passed"
+fi
+
+# ---------------------------------------------------------------------------
+# [6/7] Commit + push (idempotent)
+# ---------------------------------------------------------------------------
+echo "${YELLOW}[6/7] Committing and pushing...${NC}"
+if ! $DRY_RUN; then
+    git add Cargo.toml Cargo.lock
+    if git diff --cached --quiet; then
+        # Nothing staged: the version was already committed by a previous run
+        # or by hand. `git commit` would exit 1 here and, under `set -e`, abort
+        # a release that is in fact fine.
+        success "Nothing to commit — version already committed"
+    else
+        git commit --quiet -m "chore: release $TAG"
+        success "Committed version bump"
+    fi
+    # Idempotent by nature: a no-op when already up to date.
+    git push --quiet origin master || die "Failed to push master"
+    success "Pushed master"
+else
+    echo "${GRAY}   would commit (if needed) and push master${NC}"
+fi
+
+# ---------------------------------------------------------------------------
+# [7/7] Tag (idempotent, and refuses to move an existing tag)
+# ---------------------------------------------------------------------------
+echo "${YELLOW}[7/7] Tagging $TAG...${NC}"
+HEAD_SHA="$(git rev-parse HEAD)"
+LOCAL_TAG_SHA="$(git rev-parse -q --verify "refs/tags/$TAG^{commit}" 2>/dev/null || true)"
+REMOTE_TAG_SHA="$(git ls-remote --tags origin "refs/tags/$TAG^{}" 2>/dev/null | awk '{print $1}' | head -1)"
+[ -n "$REMOTE_TAG_SHA" ] || REMOTE_TAG_SHA="$(git ls-remote --tags origin "refs/tags/$TAG" 2>/dev/null | awk '{print $1}' | head -1)"
+
+tag_conflict() {
+    local where=$1 sha=$2
+    echo ""
+    warn "$TAG already exists on $where and points at a different commit:"
+    echo "     existing: $sha  $(git log -1 --format='%s' "$sha" 2>/dev/null || echo '(unknown commit)')"
+    echo "     HEAD:     $HEAD_SHA  $(git log -1 --format='%s' HEAD)"
+    echo ""
+    if ! $FORCE; then
+        die "Refusing to move an existing tag.
+$(hint "A published release may already be attached to it; moving it changes what")
+$(hint "$TAG means for anyone who already installed it.")
+$(hint "Release a new version instead (preferred), or re-run with --force.")"
+    fi
+    warn "--force given: the existing $TAG will be DELETED and recreated."
+    warn "Any GitHub Release attached to it may be invalidated."
+}
+
+if [ -n "$REMOTE_TAG_SHA" ] && [ "$REMOTE_TAG_SHA" != "$HEAD_SHA" ]; then
+    tag_conflict "origin" "$REMOTE_TAG_SHA"
+elif [ -n "$LOCAL_TAG_SHA" ] && [ "$LOCAL_TAG_SHA" != "$HEAD_SHA" ]; then
+    tag_conflict "this machine" "$LOCAL_TAG_SHA"
+fi
+
+if [ "$REMOTE_TAG_SHA" = "$HEAD_SHA" ] && [ "$LOCAL_TAG_SHA" = "$HEAD_SHA" ]; then
+    success "$TAG already points at HEAD — already released, nothing to do"
+    ALREADY_TAGGED=true
+else
+    ALREADY_TAGGED=false
+    if $DRY_RUN; then
+        echo "${GRAY}   would create and push tag $TAG at $HEAD_SHA${NC}"
+    else
+        if $FORCE && [ -n "$LOCAL_TAG_SHA" ]; then
+            git tag -d "$TAG" >/dev/null
+            git push origin --delete "$TAG" 2>/dev/null || true
+        fi
+        # Annotated: carries an author and a date, which lightweight tags do not.
+        git tag -a "$TAG" -m "Release $TAG" 2>/dev/null || true
+        git push --quiet origin "$TAG" || die "Failed to push tag $TAG"
+        success "Tag $TAG created and pushed"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# Summary
+# ---------------------------------------------------------------------------
 echo ""
-echo -e "${GREEN}🎉 Release $TAG initiated!${NC}"
+if $DRY_RUN; then
+    echo "${BLUE}${BOLD}Dry run complete — nothing was changed.${NC}"
+    echo "${GRAY}Re-run without --dry-run to release.${NC}"
+    exit 0
+fi
+
+if $ALREADY_TAGGED; then
+    echo "${GREEN}${BOLD}$TAG was already released.${NC}"
+else
+    echo "${GREEN}${BOLD}Release $TAG initiated.${NC}"
+fi
 echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "GitHub Actions is building:"
+release_assets | sed 's/^/  - /'
 echo ""
-echo "GitHub Actions is now building release binaries for:"
-echo "  📦 Linux (x86_64-unknown-linux-musl)"
-echo "  📦 macOS (x86_64-apple-darwin)"
-echo "  📦 Windows (x86_64-pc-windows-msvc)"
+echo "Next:"
+echo "  1. Watch the build:    $REPO_URL/actions"
+echo "  2. Edit release notes: $REPO_URL/releases/tag/$TAG"
+echo "  3. Publish to crates.io once the build is green:"
+hint "./scripts/publish.sh crates"
 echo ""
-echo "This typically takes 5-10 minutes."
-echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo ""
-echo "📋 Next Steps:"
-echo "  1. Watch build progress:"
-echo "     https://github.com/maniartech/idgen/actions"
-echo ""
-echo "  2. Once complete, edit release notes:"
-echo "     https://github.com/maniartech/idgen/releases/tag/$TAG"
-echo ""
-echo "  3. Suggested release notes template:"
-echo ""
-echo "     ## What's New in $TAG"
-echo "     "
-echo "     ### Features"
-echo "     - Feature 1"
-echo "     - Feature 2"
-echo "     "
-echo "     ### Bug Fixes"
-echo "     - Fix 1"
-echo "     "
-echo "     ### Downloads"
-echo "     | Platform | Binary |"
-echo "     |----------|--------|"
-echo "     | Linux    | idgen-linux-amd64 |"
-echo "     | macOS    | idgen-macos-amd64 |"
-echo "     | Windows  | idgen-windows-amd64.exe |"
-echo ""
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

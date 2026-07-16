@@ -3,1103 +3,555 @@
 # Publish script for idgen
 # ========================
 #
-# This script helps publish idgen to various package registries and platforms.
-# It provides options to publish to individual platforms or all at once.
+# Publishes to crates.io and generates package manifests for other platforms.
 #
-# Features:
-#   - Idempotent: Safe to run multiple times without side effects
-#   - Tracks published versions in scripts/.publish-history
-#   - Skips already published version/platform combinations
+#   ./scripts/publish.sh status        # what is published, checked against reality
+#   ./scripts/publish.sh crates        # publish to crates.io
+#   ./scripts/publish.sh homebrew      # generate the Homebrew formula
+#   ./scripts/publish.sh scoop         # generate the Scoop manifest
+#   ./scripts/publish.sh aur           # generate AUR PKGBUILDs
+#   ./scripts/publish.sh all           # generate every manifest
+#   ./scripts/publish.sh <cmd> --dry-run
 #
-# Usage:
-#   ./scripts/publish.sh [platform] [options]
+# IDEMPOTENCY
+# -----------
+# Safe to re-run. Every command checks the actual state before acting, and
+# generating a manifest twice produces a byte-identical file.
 #
-# Platforms:
-#   crates      Publish to crates.io (Rust package registry)
-#   homebrew    Generate Homebrew formula
-#   scoop       Generate Scoop manifest (Windows)
-#   aur         Generate AUR PKGBUILD (Arch Linux)
-#   all         Generate all platform files
-#   status      Show publish status for current version
-#   help        Show this help message
+# Publish state is read from crates.io itself, not from a local ledger. The old
+# script tracked published versions in scripts/.publish-history — a gitignored,
+# machine-local file. It went wrong in both directions: publish from a second
+# machine and the file claims nothing was ever published; delete the file and
+# the script tries to re-publish a live version. The registry is the only thing
+# that actually knows. `.publish-history` is still appended to as a convenience
+# log, but nothing branches on it.
 #
-# Options:
-#   --force     Force publish even if already published
+# crates.io versions are immutable: a published version can never be replaced,
+# only yanked. So there is no --force for crates. If a version is live, the only
+# path forward is a new version, and the script says so rather than failing at
+# the API with a wall of red.
 #
-# Examples:
-#   ./scripts/publish.sh crates        # Publish to crates.io
-#   ./scripts/publish.sh homebrew      # Generate Homebrew formula
-#   ./scripts/publish.sh all           # Generate all platform files
-#   ./scripts/publish.sh status        # Check what's been published
-#   ./scripts/publish.sh crates --force  # Force re-publish
+# NAMING
+# ------
+# Nothing here hardcodes the crate or binary name; see scripts/_common.sh for
+# why. The short version: this script used to tell users `cargo install idgen`
+# while the crate is `idgen-cli`, and `idgen` is a real, unrelated crate owned
+# by someone else — so its output installed the wrong package. Names now derive
+# from Cargo.toml, and the release asset list derives from the workflow.
 #
-# Prerequisites:
-#   - For crates.io: cargo login (one-time setup)
-#   - For Homebrew: Fork homebrew-core or create your own tap
-#   - For AUR: AUR account and SSH key setup
-#
+# PREREQUISITES
+#   crates.io  cargo login (one-time)
+#   homebrew   a tap repo, e.g. github.com/<org>/homebrew-tap
+#   scoop      a bucket repo
+#   aur        an AUR account and SSH key
 
-# Don't exit on error - we handle errors ourselves
-set +e
+set -uo pipefail
 
-# Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-GRAY='\033[0;90m'
-BOLD='\033[1m'
-NC='\033[0m'
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/_common.sh"
 
-# Script directory (for publish history file)
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PUBLISH_HISTORY="$SCRIPT_DIR/.publish-history"
+cd "$REPO_ROOT"
 
-# ============================================================================
-# ERROR HANDLING & REPORTING
-# ============================================================================
+PUBLISH_HISTORY="$REPO_ROOT/scripts/.publish-history"
+DIST_DIR="$REPO_ROOT/dist/packages"
 
-# Track errors for summary
-ERRORS=()
-WARNINGS=()
-
-# Print an error message with formatting
-error() {
-    echo -e "${RED}${BOLD}ERROR:${NC} ${RED}$1${NC}" >&2
-    ERRORS+=("$1")
-}
-
-# Print a warning message
-warn() {
-    echo -e "${YELLOW}${BOLD}WARNING:${NC} ${YELLOW}$1${NC}"
-    WARNINGS+=("$1")
-}
-
-# Print an info message
-info() {
-    echo -e "${CYAN}ℹ${NC}  $1"
-}
-
-# Print a success message
-success() {
-    echo -e "${GREEN}✓${NC}  $1"
-}
-
-# Print a hint/suggestion
-hint() {
-    echo -e "${GRAY}   💡 $1${NC}"
-}
-
-# Print a command suggestion
-suggest_cmd() {
-    echo -e "${GRAY}   → ${CYAN}$1${NC}"
-}
-
-# Show a troubleshooting guide
-troubleshoot() {
-    local issue=$1
-    echo ""
-    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${YELLOW}${BOLD}Troubleshooting: $issue${NC}"
-    echo -e "${YELLOW}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-}
-
-# Show summary at the end
-show_summary() {
-    echo ""
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${BOLD}Summary${NC}"
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-
-    if [ ${#ERRORS[@]} -eq 0 ] && [ ${#WARNINGS[@]} -eq 0 ]; then
-        echo -e "${GREEN}✓ All operations completed successfully!${NC}"
-    else
-        if [ ${#WARNINGS[@]} -gt 0 ]; then
-            echo -e "${YELLOW}Warnings (${#WARNINGS[@]}):${NC}"
-            for warning in "${WARNINGS[@]}"; do
-                echo -e "  ${YELLOW}⚠${NC}  $warning"
-            done
-        fi
-
-        if [ ${#ERRORS[@]} -gt 0 ]; then
-            echo -e "${RED}Errors (${#ERRORS[@]}):${NC}"
-            for err in "${ERRORS[@]}"; do
-                echo -e "  ${RED}✗${NC}  $err"
-            done
-            echo ""
-            echo -e "${YELLOW}Run with --help for usage information${NC}"
-        fi
-    fi
-    echo ""
-}
-
-# ============================================================================
-# PREREQUISITES VALIDATION
-# ============================================================================
-
-# Check if running from project root
-validate_project_root() {
-    if [ ! -f "Cargo.toml" ]; then
-        error "Cargo.toml not found. Please run this script from the project root."
-        troubleshoot "Wrong directory"
-        echo "  This script must be run from the idgen project root directory."
-        echo ""
-        echo "  Your current directory: $(pwd)"
-        echo ""
-        suggest_cmd "cd /path/to/idgen"
-        suggest_cmd "./scripts/publish.sh $*"
-        echo ""
-        exit 1
-    fi
-}
-
-# Validate version can be extracted
-validate_version() {
-    if [ -z "$VERSION" ] || [ "$VERSION" == "" ]; then
-        error "Could not extract version from Cargo.toml"
-        troubleshoot "Version extraction failed"
-        echo "  The script expects a line like: version = \"1.4.0\" in Cargo.toml"
-        echo ""
-        echo "  Check your Cargo.toml format:"
-        suggest_cmd "grep version Cargo.toml"
-        echo ""
-        exit 1
-    fi
-}
-
-# Check if a command exists
-require_command() {
-    local cmd=$1
-    local install_hint=$2
-
-    if ! command -v "$cmd" &> /dev/null; then
-        error "$cmd is not installed or not in PATH"
-        if [ -n "$install_hint" ]; then
-            troubleshoot "$cmd not found"
-            echo "  $install_hint"
-            echo ""
-        fi
-        return 1
-    fi
-    return 0
-}
-
-# Check if git release tag exists
-validate_release_exists() {
-    local tag="v$VERSION"
-
-    info "Checking if release $tag exists on GitHub..."
-
-    # Check if tag exists locally
-    if ! git rev-parse "$tag" &>/dev/null; then
-        warn "Git tag $tag not found locally"
-        hint "Create a release first: ./scripts/release.sh $VERSION"
-    fi
-
-    # Check if release assets are available (using curl)
-    if require_command "curl" ""; then
-        local check_url="$RELEASE_URL/idgen-linux-amd64"
-        local http_code=$(curl -s -o /dev/null -w "%{http_code}" -I "$check_url" 2>/dev/null)
-
-        if [ "$http_code" != "200" ] && [ "$http_code" != "302" ]; then
-            warn "Release assets may not be available yet (HTTP $http_code)"
-            hint "Wait for GitHub Actions to complete building release assets"
-            hint "Check: $REPO_URL/releases/tag/$tag"
-            return 1
-        else
-            success "Release assets are available"
-        fi
-    fi
-    return 0
-}
-
-# Run all prerequisite checks
-validate_prerequisites() {
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${BOLD}Validating prerequisites...${NC}"
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo ""
-
-    validate_project_root
-    validate_version
-
-    success "Project root: $(pwd)"
-    success "Version: $VERSION"
-    echo ""
-}
-
-# ============================================================================
-# INITIALIZATION
-# ============================================================================
-
-# Run validation before extracting version
-if [ ! -f "Cargo.toml" ] && [ "${1:-}" != "help" ] && [ "${1:-}" != "--help" ] && [ "${1:-}" != "-h" ]; then
-    echo -e "${RED}${BOLD}ERROR:${NC} ${RED}Cargo.toml not found. Please run from project root.${NC}" >&2
-    exit 1
-fi
-
-# Get version from Cargo.toml
-VERSION=$(grep '^version' Cargo.toml 2>/dev/null | head -1 | sed 's/.*"\(.*\)".*/\1/' || echo "")
-REPO_URL="https://github.com/maniartech/idgen"
-RELEASE_URL="$REPO_URL/releases/download/v$VERSION"
-
-# Create dist directory for generated files
-DIST_DIR="dist/packages"
-mkdir -p "$DIST_DIR"
-
-# Check for --force flag
+# ---------------------------------------------------------------------------
+# Arguments
+# ---------------------------------------------------------------------------
+PLATFORM=""
+DRY_RUN=false
 FORCE=false
+
 for arg in "$@"; do
-    if [ "$arg" == "--force" ]; then
-        FORCE=true
-    fi
+    case "$arg" in
+        --dry-run) DRY_RUN=true ;;
+        --force)   FORCE=true ;;
+        --help|-h|help) PLATFORM="help" ;;
+        -*) die "Unknown option: $arg (try --help)" ;;
+        *)  [ -z "$PLATFORM" ] && PLATFORM="$arg" ;;
+    esac
 done
-
-# ============================================================================
-# PUBLISH HISTORY FUNCTIONS
-# ============================================================================
-
-# Check if a version/platform combination has been published
-is_published() {
-    local platform=$1
-    local version=$2
-
-    if [ ! -f "$PUBLISH_HISTORY" ]; then
-        return 1  # Not published (file doesn't exist)
-    fi
-
-    grep -q "^${version}:${platform}:" "$PUBLISH_HISTORY" 2>/dev/null
-}
-
-# Record a successful publish
-record_publish() {
-    local platform=$1
-    local version=$2
-    local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-
-    # Create file if it doesn't exist
-    touch "$PUBLISH_HISTORY"
-
-    # Add entry
-    echo "${version}:${platform}:${timestamp}" >> "$PUBLISH_HISTORY"
-
-    echo -e "${GRAY}  Recorded in .publish-history${NC}"
-}
-
-# Check if should skip (already published and not forced)
-should_skip() {
-    local platform=$1
-
-    if [ "$FORCE" = true ]; then
-        return 1  # Don't skip if forced
-    fi
-
-    if is_published "$platform" "$VERSION"; then
-        echo -e "${YELLOW}⏭  Skipping $platform v$VERSION (already published)${NC}"
-        echo -e "${GRAY}   Use --force to publish again${NC}"
-        echo ""
-        return 0  # Skip
-    fi
-
-    return 1  # Don't skip
-}
-
-# Show publish status
-show_status() {
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${BOLD}Publish Status for v$VERSION${NC}"
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo ""
-
-    local platforms=("crates" "homebrew" "scoop" "aur")
-    local not_published=()
-
-    for platform in "${platforms[@]}"; do
-        if is_published "$platform" "$VERSION"; then
-            local timestamp=$(grep "^${VERSION}:${platform}:" "$PUBLISH_HISTORY" 2>/dev/null | tail -1 | cut -d: -f3-)
-            echo -e "  ${GREEN}✓${NC} $platform ${GRAY}(published: $timestamp)${NC}"
-        else
-            echo -e "  ${RED}✗${NC} $platform ${GRAY}(not published)${NC}"
-            not_published+=("$platform")
-        fi
-    done
-
-    echo ""
-
-    # Show next steps if something is not published
-    if [ ${#not_published[@]} -gt 0 ]; then
-        echo -e "${YELLOW}To publish remaining platforms:${NC}"
-        for platform in "${not_published[@]}"; do
-            suggest_cmd "./scripts/publish.sh $platform"
-        done
-        echo ""
-    else
-        echo -e "${GREEN}All platforms published for v$VERSION!${NC}"
-        echo ""
-    fi
-
-    if [ -f "$PUBLISH_HISTORY" ]; then
-        echo -e "${GRAY}History file: $PUBLISH_HISTORY${NC}"
-        echo -e "${GRAY}Total entries: $(wc -l < "$PUBLISH_HISTORY")${NC}"
-        echo ""
-
-        # Show recent history
-        local recent_count=$(tail -5 "$PUBLISH_HISTORY" | wc -l)
-        if [ $recent_count -gt 0 ]; then
-            echo -e "${GRAY}Recent publishes:${NC}"
-            tail -5 "$PUBLISH_HISTORY" | while read line; do
-                echo -e "  ${GRAY}$line${NC}"
-            done
-        fi
-    else
-        echo -e "${GRAY}No publish history found.${NC}"
-        hint "Run './scripts/publish.sh crates' to publish to crates.io"
-    fi
-    echo ""
-}
+PLATFORM="${PLATFORM:-help}"
 
 show_help() {
-    echo ""
-    echo -e "${BOLD}idgen publish script${NC}"
-    echo ""
-    echo -e "${YELLOW}Usage:${NC} ./scripts/publish.sh [platform] [options]"
-    echo ""
-    echo -e "${YELLOW}Platforms:${NC}"
-    echo "  crates      Publish to crates.io (Rust package registry)"
-    echo "  homebrew    Generate Homebrew formula"
-    echo "  scoop       Generate Scoop manifest (Windows)"
-    echo "  aur         Generate AUR PKGBUILD (Arch Linux)"
-    echo "  all         Generate all platform files"
-    echo "  status      Show publish status for current version"
-    echo "  help        Show this help message"
-    echo ""
-    echo -e "${YELLOW}Options:${NC}"
-    echo "  --force     Force publish even if already published"
-    echo "  --check     Validate prerequisites without publishing"
-    echo ""
-    echo -e "${YELLOW}Examples:${NC}"
-    echo "  ./scripts/publish.sh status          # Check what's been published"
-    echo "  ./scripts/publish.sh crates          # Publish to crates.io"
-    echo "  ./scripts/publish.sh all             # Generate all platform files"
-    echo "  ./scripts/publish.sh crates --force  # Force re-publish"
-    echo "  ./scripts/publish.sh --check         # Validate prerequisites"
-    echo ""
-    echo -e "${YELLOW}Current State:${NC}"
-    echo "  Version:      ${VERSION:-unknown}"
-    echo "  History file: $PUBLISH_HISTORY"
-    echo ""
-    echo -e "${YELLOW}Workflow:${NC}"
-    echo "  1. Create release:  ./scripts/release.sh 1.4.0"
-    echo "  2. Wait for GitHub Actions to build release assets"
-    echo "  3. Publish:         ./scripts/publish.sh crates"
-    echo "  4. Generate files:  ./scripts/publish.sh all"
+    sed -n '2,46p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    echo "Current state:"
+    echo "  crate:    $CRATE_NAME"
+    echo "  binary:   $BIN_NAME"
+    echo "  version:  $VERSION"
+    echo "  repo:     $REPO_URL"
     echo ""
 }
 
-# ============================================================================
-# CRATES.IO
-# ============================================================================
-publish_crates() {
-    if should_skip "crates"; then
+if [ "$PLATFORM" = "help" ]; then show_help; exit 0; fi
+
+# ---------------------------------------------------------------------------
+# Real-world state
+# ---------------------------------------------------------------------------
+
+# Is $VERSION of $CRATE_NAME already live on crates.io? Asks the registry.
+# Returns 0 (published), 1 (not published), or 2 (could not tell — offline,
+# rate-limited, API change). Callers must treat 2 as "unknown" and refuse to
+# guess: assuming "not published" would mean attempting a publish that cannot
+# be undone.
+crates_io_has_version() {
+    command -v curl >/dev/null 2>&1 || return 2
+    local body
+    body="$(curl -fsS --max-time 20 \
+        -H "User-Agent: $CRATE_NAME-publish-script" \
+        "https://crates.io/api/v1/crates/$CRATE_NAME/versions" 2>/dev/null)" || return 2
+    [ -n "$body" ] || return 2
+    # Match "num":"1.5.0" tolerating whitespace. Avoids a jq dependency.
+    if echo "$body" | grep -qE "\"num\"[[:space:]]*:[[:space:]]*\"$(echo "$VERSION" | sed 's/\./\\./g')\""; then
         return 0
     fi
+    # Confirm we actually parsed a version list before claiming "not published".
+    echo "$body" | grep -qE '"num"[[:space:]]*:' || return 2
+    return 1
+}
 
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${YELLOW}Publishing to crates.io...${NC}"
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+# Are the release assets for this version actually downloadable yet?
+release_assets_available() {
+    command -v curl >/dev/null 2>&1 || return 2
+    local first code
+    first="$(release_assets | head -1)"
+    code="$(curl -s -o /dev/null -w "%{http_code}" -IL --max-time 20 "$RELEASE_URL/$first" 2>/dev/null)"
+    [ "$code" = "200" ]
+}
+
+record_publish() {
+    local platform=$1
+    $DRY_RUN && return 0
+    # A convenience log only. Nothing reads this to make decisions.
+    touch "$PUBLISH_HISTORY"
+    local entry="${VERSION}:${platform}:$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+    grep -q "^${VERSION}:${platform}:" "$PUBLISH_HISTORY" 2>/dev/null || echo "$entry" >> "$PUBLISH_HISTORY"
+}
+
+# sha256 of a URL, or empty if it cannot be fetched. Never invents a value:
+# a wrong hash in a formula is worse than an obvious placeholder.
+sha256_of_url() {
+    local url=$1 tmp hash
+    command -v curl >/dev/null 2>&1 || return 1
+    tmp="$(mktemp 2>/dev/null || echo "/tmp/pub-$$")"
+    if curl -fsSL --max-time 120 -o "$tmp" "$url" 2>/dev/null && [ -s "$tmp" ]; then
+        if command -v sha256sum >/dev/null 2>&1; then
+            hash="$(sha256sum "$tmp" | cut -d' ' -f1)"
+        elif command -v shasum >/dev/null 2>&1; then
+            hash="$(shasum -a 256 "$tmp" | cut -d' ' -f1)"
+        fi
+    fi
+    rm -f "$tmp"
+    [ -n "${hash:-}" ] || return 1
+    echo "$hash"
+}
+
+write_file() {
+    local path=$1 content=$2
+    if $DRY_RUN; then
+        echo "${GRAY}   would write: $path${NC}"
+        return 0
+    fi
+    mkdir -p "$(dirname "$path")" || die "Cannot create $(dirname "$path")"
+    # Idempotent: identical input produces an identical file, and rewriting it
+    # is a no-op rather than a spurious change.
+    printf '%s\n' "$content" > "$path" || die "Cannot write $path"
+    success "Generated: ${path#$REPO_ROOT/}"
+}
+
+# ---------------------------------------------------------------------------
+# status
+# ---------------------------------------------------------------------------
+show_status() {
+    echo "${BOLD}Status for $CRATE_NAME v$VERSION${NC}"
     echo ""
 
-    # Check cargo is available
-    if ! require_command "cargo" "Install Rust: https://rustup.rs"; then
-        return 1
+    crates_io_has_version
+    case $? in
+        0) echo "  ${GREEN}published${NC}  crates.io  ${GRAY}(v$VERSION is live)${NC}" ;;
+        1) echo "  ${RED}pending${NC}    crates.io  ${GRAY}(v$VERSION not published)${NC}" ;;
+        *) echo "  ${YELLOW}unknown${NC}    crates.io  ${GRAY}(could not reach the registry)${NC}" ;;
+    esac
+
+    local tag="v$VERSION"
+    if git rev-parse -q --verify "refs/tags/$tag" >/dev/null 2>&1; then
+        echo "  ${GREEN}tagged${NC}     git        ${GRAY}($tag exists locally)${NC}"
+    else
+        echo "  ${RED}untagged${NC}   git        ${GRAY}($tag not found — run ./scripts/release.sh $VERSION)${NC}"
     fi
-    success "cargo found"
 
-    # Check if logged in to crates.io
-    info "Checking crates.io authentication..."
-    if ! cargo login --help &>/dev/null; then
-        error "cargo login command not available"
-        return 1
+    if release_assets_available; then
+        echo "  ${GREEN}available${NC}  assets     ${GRAY}(release binaries downloadable)${NC}"
+    else
+        echo "  ${YELLOW}waiting${NC}    assets     ${GRAY}(not downloadable yet)${NC}"
     fi
 
-    # Check if credentials exist
-    local cargo_credentials="$HOME/.cargo/credentials"
-    local cargo_credentials_toml="$HOME/.cargo/credentials.toml"
+    echo ""
+    echo "  ${GRAY}Expected assets (from .github/workflows/release.yml):${NC}"
+    release_assets | sed "s/^/    ${GRAY}- /;s/$/${NC}/"
+    echo ""
+    for f in "$DIST_DIR/$BIN_NAME.rb" "$DIST_DIR/$BIN_NAME.json" "$DIST_DIR/aur/PKGBUILD-bin"; do
+        [ -f "$f" ] && echo "  ${GRAY}generated: ${f#$REPO_ROOT/}${NC}"
+    done
+    echo ""
+}
 
-    if [ ! -f "$cargo_credentials" ] && [ ! -f "$cargo_credentials_toml" ]; then
-        error "Not logged in to crates.io"
-        troubleshoot "crates.io authentication"
-        echo "  You need to authenticate with crates.io before publishing."
-        echo ""
-        echo "  Steps:"
-        echo "  1. Go to https://crates.io/me"
-        echo "  2. Create an API token with 'publish-new' and 'publish-update' scopes"
-        echo "  3. Run:"
-        suggest_cmd "cargo login <your-api-token>"
-        echo ""
-        return 1
+# ---------------------------------------------------------------------------
+# crates.io
+# ---------------------------------------------------------------------------
+publish_crates() {
+    echo "${BOLD}Publishing $CRATE_NAME v$VERSION to crates.io${NC}"
+    echo ""
+
+    command -v cargo >/dev/null 2>&1 || die "cargo not found. Install Rust: https://rustup.rs"
+
+    # Idempotency gate, against the registry rather than a local file.
+    crates_io_has_version
+    case $? in
+        0)
+            success "v$VERSION is already on crates.io — nothing to do"
+            hint "Versions on crates.io are immutable; they can be yanked but never replaced."
+            hint "To ship changes, bump the version and release again."
+            record_publish "crates"
+            return 0
+            ;;
+        2)
+            # Refuse to guess. Publishing is irreversible.
+            die "Could not reach crates.io to check whether v$VERSION is published.
+$(hint "Publishing is irreversible, so this script will not guess.")
+$(hint "Check $REPO_URL and https://crates.io/crates/$CRATE_NAME, then retry.")"
+            ;;
+    esac
+    info "v$VERSION is not yet on crates.io"
+
+    if [ ! -f "$HOME/.cargo/credentials" ] && [ ! -f "$HOME/.cargo/credentials.toml" ]; then
+        die "Not logged in to crates.io.
+$(hint "Create a token at https://crates.io/me with publish-new and publish-update scopes")
+$(hint "then run: cargo login <token>")"
     fi
     success "crates.io credentials found"
 
-    # Dry run first
     echo ""
-    info "Running dry-run to validate package..."
-    echo ""
-    if ! cargo publish --dry-run 2>&1; then
-        local exit_code=$?
-        error "Dry run failed (exit code: $exit_code)"
-        troubleshoot "cargo publish dry-run failed"
-        echo "  Common issues:"
-        echo "  • Missing required fields in Cargo.toml (description, license, repository)"
-        echo "  • Invalid package name or version"
-        echo "  • Build errors in the code"
-        echo "  • Missing dependencies"
-        echo ""
-        echo "  Check your Cargo.toml has these fields:"
-        suggest_cmd "grep -E '^(name|version|description|license|repository)' Cargo.toml"
-        echo ""
-        echo "  Try building first:"
-        suggest_cmd "cargo build --release"
-        echo ""
-        return 1
-    fi
+    info "Validating the package (dry run)..."
+    cargo publish --dry-run --locked 2>&1 | tail -5 \
+        || die "cargo publish --dry-run failed. Fix the errors above before publishing."
+    success "Package validates"
 
-    echo ""
-    success "Dry run passed"
-    echo ""
-
-    # Prompt for confirmation
-    echo -e "${YELLOW}Ready to publish idgen v$VERSION to crates.io${NC}"
-    echo ""
-    read -p "Proceed with publishing? (y/N) " -n 1 -r
-    echo ""
-
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        warn "Publishing cancelled by user"
+    if $DRY_RUN; then
+        echo ""
+        echo "${BLUE}Dry run — stopping before the irreversible step.${NC}"
         return 0
     fi
 
-    # Actually publish
     echo ""
-    info "Publishing to crates.io..."
+    warn "Publishing to crates.io cannot be undone. A version can be yanked, never replaced."
+    read -r -p "Publish $CRATE_NAME v$VERSION? (y/N) " -n 1 reply
     echo ""
-
-    if ! cargo publish 2>&1; then
-        local exit_code=$?
-        error "Failed to publish to crates.io (exit code: $exit_code)"
-        troubleshoot "cargo publish failed"
-        echo "  Possible reasons:"
-        echo "  • Version $VERSION already exists on crates.io"
-        echo "  • Network connectivity issues"
-        echo "  • API token expired or invalid"
-        echo "  • Rate limiting"
-        echo ""
-        echo "  Check if version exists:"
-        suggest_cmd "curl -s https://crates.io/api/v1/crates/idgen/versions | grep $VERSION"
-        echo ""
-        echo "  If version exists, bump version in Cargo.toml and try again."
-        echo ""
-        return 1
+    if [[ ! "$reply" =~ ^[Yy]$ ]]; then
+        info "Cancelled — nothing was published"
+        return 0
     fi
 
+    cargo publish --locked || die "cargo publish failed"
+
+    success "Published $CRATE_NAME v$VERSION"
+    record_publish "crates"
     echo ""
-    success "Published to crates.io!"
-    record_publish "crates" "$VERSION"
-    echo ""
-    echo -e "  ${GRAY}View at:${NC} https://crates.io/crates/idgen"
-    echo ""
-    echo -e "${YELLOW}Users can now install with:${NC}"
-    suggest_cmd "cargo install idgen"
+    echo "  View:    https://crates.io/crates/$CRATE_NAME"
+    echo "  Install: cargo install $CRATE_NAME"
     echo ""
 }
 
-# ============================================================================
-# HOMEBREW
-# ============================================================================
+# ---------------------------------------------------------------------------
+# Homebrew
+# ---------------------------------------------------------------------------
 generate_homebrew() {
-    if should_skip "homebrew"; then
-        return 0
-    fi
-
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${YELLOW}Generating Homebrew formula...${NC}"
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo "${BOLD}Generating Homebrew formula${NC}"
     echo ""
 
-    # Check release assets are available
-    validate_release_exists || warn "Proceeding anyway, but SHA256 hashes will need manual update"
+    release_assets_available || warn "Release assets are not downloadable yet — hashes will be placeholders"
 
-    # Ensure dist directory exists
-    if ! mkdir -p "$DIST_DIR" 2>/dev/null; then
-        error "Failed to create directory: $DIST_DIR"
-        troubleshoot "Directory creation failed"
-        echo "  Check write permissions for: $(dirname "$DIST_DIR")"
-        suggest_cmd "ls -la $(dirname "$DIST_DIR")"
-        return 1
+    # Only emit a branch for an asset the workflow actually builds. The old
+    # formula hardcoded an arm64 branch pointing at idgen-macos-arm64 while the
+    # workflow built no such asset, so every Apple Silicon install failed.
+    local mac_arm mac_amd linux
+    mac_arm="$(asset_for 'macos-arm64' || true)"
+    mac_amd="$(asset_for 'macos-amd64' || true)"
+    linux="$(asset_for 'linux-amd64' || true)"
+
+    [ -n "$mac_amd" ] || [ -n "$mac_arm" ] || [ -n "$linux" ] \
+        || die "The workflow builds no macOS or Linux asset — nothing to put in a formula."
+
+    if [ -z "$mac_arm" ]; then
+        warn "No macos-arm64 asset in the workflow — the formula will omit Apple Silicon."
+        hint "Add an aarch64-apple-darwin target to .github/workflows/release.yml"
     fi
 
-    # Calculate SHA256 hashes if binaries are available
-    local macos_amd64_sha="PLACEHOLDER_AMD64_SHA256"
-    local macos_arm64_sha="PLACEHOLDER_ARM64_SHA256"
-    local linux_sha="PLACEHOLDER_LINUX_SHA256"
-
-    info "Downloading binaries to calculate SHA256 hashes..."
-
-    if require_command "curl" "Install curl to auto-calculate SHA256 hashes"; then
-        # Try to download and hash each binary
-        local temp_dir=$(mktemp -d 2>/dev/null || echo "/tmp/idgen-$$")
-        mkdir -p "$temp_dir"
-
-        # macOS AMD64
-        if curl -sL -o "$temp_dir/macos-amd64" "$RELEASE_URL/idgen-macos-amd64" 2>/dev/null && [ -s "$temp_dir/macos-amd64" ]; then
-            macos_amd64_sha=$(sha256sum "$temp_dir/macos-amd64" 2>/dev/null | cut -d' ' -f1 || shasum -a 256 "$temp_dir/macos-amd64" 2>/dev/null | cut -d' ' -f1)
-            if [ -n "$macos_amd64_sha" ] && [ "$macos_amd64_sha" != "" ]; then
-                success "macOS AMD64 SHA256: ${macos_amd64_sha:0:16}..."
-            fi
+    local body="" install="" placeholder=false
+    if [ -n "$mac_arm" ] || [ -n "$mac_amd" ]; then
+        body+="  on_macos do"$'\n'
+        if [ -n "$mac_arm" ] && [ -n "$mac_amd" ]; then
+            local h_arm h_amd
+            h_arm="$(sha256_of_url "$RELEASE_URL/$mac_arm" || true)"
+            h_amd="$(sha256_of_url "$RELEASE_URL/$mac_amd" || true)"
+            [ -n "$h_arm" ] || { h_arm="PLACEHOLDER_SHA256_ARM64"; placeholder=true; }
+            [ -n "$h_amd" ] || { h_amd="PLACEHOLDER_SHA256_AMD64"; placeholder=true; }
+            body+="    if Hardware::CPU.arm?"$'\n'
+            body+="      url \"$RELEASE_URL/$mac_arm\""$'\n'
+            body+="      sha256 \"$h_arm\""$'\n'
+            body+="    else"$'\n'
+            body+="      url \"$RELEASE_URL/$mac_amd\""$'\n'
+            body+="      sha256 \"$h_amd\""$'\n'
+            body+="    end"$'\n'
+            install+="    bin.install \"$mac_arm\" => \"$BIN_NAME\" if OS.mac? && Hardware::CPU.arm?"$'\n'
+            install+="    bin.install \"$mac_amd\" => \"$BIN_NAME\" if OS.mac? && !Hardware::CPU.arm?"$'\n'
         else
-            warn "Could not download macOS AMD64 binary"
+            local only="${mac_arm:-$mac_amd}" h
+            h="$(sha256_of_url "$RELEASE_URL/$only" || true)"
+            [ -n "$h" ] || { h="PLACEHOLDER_SHA256"; placeholder=true; }
+            body+="    url \"$RELEASE_URL/$only\""$'\n'
+            body+="    sha256 \"$h\""$'\n'
+            install+="    bin.install \"$only\" => \"$BIN_NAME\" if OS.mac?"$'\n'
         fi
-
-        # macOS ARM64
-        if curl -sL -o "$temp_dir/macos-arm64" "$RELEASE_URL/idgen-macos-arm64" 2>/dev/null && [ -s "$temp_dir/macos-arm64" ]; then
-            macos_arm64_sha=$(sha256sum "$temp_dir/macos-arm64" 2>/dev/null | cut -d' ' -f1 || shasum -a 256 "$temp_dir/macos-arm64" 2>/dev/null | cut -d' ' -f1)
-            if [ -n "$macos_arm64_sha" ] && [ "$macos_arm64_sha" != "" ]; then
-                success "macOS ARM64 SHA256: ${macos_arm64_sha:0:16}..."
-            fi
-        else
-            warn "Could not download macOS ARM64 binary"
-        fi
-
-        # Linux AMD64
-        if curl -sL -o "$temp_dir/linux-amd64" "$RELEASE_URL/idgen-linux-amd64" 2>/dev/null && [ -s "$temp_dir/linux-amd64" ]; then
-            linux_sha=$(sha256sum "$temp_dir/linux-amd64" 2>/dev/null | cut -d' ' -f1 || shasum -a 256 "$temp_dir/linux-amd64" 2>/dev/null | cut -d' ' -f1)
-            if [ -n "$linux_sha" ] && [ "$linux_sha" != "" ]; then
-                success "Linux AMD64 SHA256: ${linux_sha:0:16}..."
-            fi
-        else
-            warn "Could not download Linux AMD64 binary"
-        fi
-
-        # Cleanup
-        rm -rf "$temp_dir"
-    else
-        warn "curl not available - SHA256 hashes will be placeholders"
+        body+="  end"$'\n\n'
+    fi
+    if [ -n "$linux" ]; then
+        local h_linux
+        h_linux="$(sha256_of_url "$RELEASE_URL/$linux" || true)"
+        [ -n "$h_linux" ] || { h_linux="PLACEHOLDER_SHA256_LINUX"; placeholder=true; }
+        body+="  on_linux do"$'\n'
+        body+="    url \"$RELEASE_URL/$linux\""$'\n'
+        body+="    sha256 \"$h_linux\""$'\n'
+        body+="  end"$'\n\n'
+        install+="    bin.install \"$linux\" => \"$BIN_NAME\" if OS.linux?"$'\n'
     fi
 
-    echo ""
+    local class_name
+    # idgen-cli -> IdgenCli, matching Homebrew's file-to-class convention.
+    class_name="$(echo "$BIN_NAME" | awk -F'[-_]' '{for(i=1;i<=NF;i++) printf toupper(substr($i,1,1)) tolower(substr($i,2))}')"
 
-    cat > "$DIST_DIR/idgen.rb" << EOF
-# Homebrew formula for idgen
-# To install: brew install maniartech/tap/idgen
-# Or add tap: brew tap maniartech/tap && brew install idgen
+    local desc
+    desc="$(cargo_field '[package]' 'description')"
 
-class Idgen < Formula
-  desc "Fast CLI tool for generating and inspecting unique IDs (UUID, NanoID, CUID, ULID, ObjectID)"
-  homepage "$REPO_URL"
-  version "$VERSION"
-  license "MIT"
+    write_file "$DIST_DIR/$BIN_NAME.rb" "# Homebrew formula for $BIN_NAME
+# Generated by scripts/publish.sh — do not edit by hand.
+#
+#   brew tap <org>/tap && brew install $BIN_NAME
 
-  on_macos do
-    if Hardware::CPU.arm?
-      # Apple Silicon (M1/M2)
-      url "$RELEASE_URL/idgen-macos-arm64"
-      sha256 "$macos_arm64_sha"
-    else
-      # Intel Mac
-      url "$RELEASE_URL/idgen-macos-amd64"
-      sha256 "$macos_amd64_sha"
-    end
-  end
+class $class_name < Formula
+  desc \"${desc%%.*}\"
+  homepage \"$REPO_URL\"
+  version \"$VERSION\"
+  license \"$(cargo_field '[package]' 'license')\"
 
-  on_linux do
-    url "$RELEASE_URL/idgen-linux-amd64"
-    sha256 "$linux_sha"
-  end
-
-  def install
-    bin.install "idgen-macos-amd64" => "idgen" if OS.mac? && !Hardware::CPU.arm?
-    bin.install "idgen-macos-arm64" => "idgen" if OS.mac? && Hardware::CPU.arm?
-    bin.install "idgen-linux-amd64" => "idgen" if OS.linux?
-
-    # Generate and install shell completions
-    generate_completions_from_executable(bin/"idgen", "completions")
+$body  def install
+$install
+    generate_completions_from_executable(bin/\"$BIN_NAME\", \"completions\")
   end
 
   test do
-    # Test basic UUID generation
-    output = shell_output("#{bin}/idgen")
-    assert_match(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i, output.strip)
+    # Default output must be a UUID v4: the version nibble is 4 and the variant
+    # nibble is 8, 9, a or b.
+    output = shell_output(\"#{bin}/$BIN_NAME\").strip
+    assert_match(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\$/i, output)
 
-    # Test version
-    assert_match version.to_s, shell_output("#{bin}/idgen --version")
+    # A v7 must be sortable, so a burst comes back already ordered.
+    ids = shell_output(\"#{bin}/$BIN_NAME -t uuid7 -c 5\").split
+    assert_equal ids.sort, ids
+
+    assert_match version.to_s, shell_output(\"#{bin}/$BIN_NAME --version\")
   end
-end
-EOF
+end"
 
-    if [ ! -f "$DIST_DIR/idgen.rb" ]; then
-        error "Failed to create Homebrew formula"
-        return 1
-    fi
-
-    success "Generated: $DIST_DIR/idgen.rb"
-    record_publish "homebrew" "$VERSION"
-    echo ""
-
-    # Check for placeholder hashes and warn
-    if grep -q "PLACEHOLDER" "$DIST_DIR/idgen.rb"; then
-        warn "Formula contains placeholder SHA256 hashes"
+    record_publish "homebrew"
+    if $placeholder; then
         echo ""
-        echo -e "${YELLOW}To update hashes manually:${NC}"
-        suggest_cmd "curl -sL $RELEASE_URL/idgen-macos-amd64 | shasum -a 256"
-        suggest_cmd "curl -sL $RELEASE_URL/idgen-macos-arm64 | shasum -a 256"
-        suggest_cmd "curl -sL $RELEASE_URL/idgen-linux-amd64 | shasum -a 256"
-        echo ""
+        warn "The formula contains placeholder hashes — do not ship it as-is."
+        hint "Re-run once the release assets are downloadable and they will fill in."
     fi
-
-    echo -e "${YELLOW}Next steps for Homebrew:${NC}"
-    echo "  1. Create a tap repository: github.com/maniartech/homebrew-tap"
-    echo "  2. Copy idgen.rb to Formula/idgen.rb in the tap"
-    echo "  3. Users install with:"
-    suggest_cmd "brew tap maniartech/tap"
-    suggest_cmd "brew install idgen"
     echo ""
 }
 
-# ============================================================================
-# SCOOP (Windows)
-# ============================================================================
+# ---------------------------------------------------------------------------
+# Scoop
+# ---------------------------------------------------------------------------
 generate_scoop() {
-    if should_skip "scoop"; then
-        return 0
-    fi
-
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${YELLOW}Generating Scoop manifest...${NC}"
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo "${BOLD}Generating Scoop manifest${NC}"
     echo ""
 
-    # Check release assets
-    validate_release_exists || warn "Proceeding anyway, but SHA256 hash will need manual update"
+    local win hash
+    win="$(asset_for 'windows' || true)"
+    [ -n "$win" ] || die "The workflow builds no Windows asset — nothing to put in a Scoop manifest."
 
-    # Ensure dist directory exists
-    if ! mkdir -p "$DIST_DIR" 2>/dev/null; then
-        error "Failed to create directory: $DIST_DIR"
-        return 1
-    fi
+    release_assets_available || warn "Release assets are not downloadable yet — hash will be a placeholder"
+    hash="$(sha256_of_url "$RELEASE_URL/$win" || true)"
+    local placeholder=false
+    [ -n "$hash" ] || { hash="PLACEHOLDER_SHA256"; placeholder=true; }
 
-    # Calculate SHA256 hash
-    local windows_sha="PLACEHOLDER_SHA256"
-
-    if require_command "curl" ""; then
-        info "Downloading Windows binary to calculate SHA256..."
-        local temp_file=$(mktemp 2>/dev/null || echo "/tmp/idgen-win-$$")
-
-        if curl -sL -o "$temp_file" "$RELEASE_URL/idgen-windows-amd64.exe" 2>/dev/null && [ -s "$temp_file" ]; then
-            windows_sha=$(sha256sum "$temp_file" 2>/dev/null | cut -d' ' -f1 || shasum -a 256 "$temp_file" 2>/dev/null | cut -d' ' -f1)
-            if [ -n "$windows_sha" ] && [ "$windows_sha" != "" ]; then
-                success "Windows SHA256: ${windows_sha:0:16}..."
-            fi
-        else
-            warn "Could not download Windows binary"
-        fi
-        rm -f "$temp_file"
-    fi
-
-    echo ""
-
-    cat > "$DIST_DIR/idgen.json" << EOF
-{
-    "version": "$VERSION",
-    "description": "Fast CLI tool for generating and inspecting unique IDs (UUID, NanoID, CUID, ULID, ObjectID)",
-    "homepage": "$REPO_URL",
-    "license": "MIT",
-    "architecture": {
-        "64bit": {
-            "url": "$RELEASE_URL/idgen-windows-amd64.exe",
-            "hash": "$windows_sha"
+    write_file "$DIST_DIR/$BIN_NAME.json" "{
+    \"##\": \"Generated by scripts/publish.sh — do not edit by hand.\",
+    \"version\": \"$VERSION\",
+    \"description\": \"$(cargo_field '[package]' 'description')\",
+    \"homepage\": \"$REPO_URL\",
+    \"license\": \"$(cargo_field '[package]' 'license')\",
+    \"architecture\": {
+        \"64bit\": {
+            \"url\": \"$RELEASE_URL/$win\",
+            \"hash\": \"$hash\"
         }
     },
-    "bin": [["idgen-windows-amd64.exe", "idgen"]],
-    "checkver": {
-        "github": "$REPO_URL"
+    \"bin\": [[\"$win\", \"$BIN_NAME\"]],
+    \"checkver\": {
+        \"github\": \"$REPO_URL\"
     },
-    "autoupdate": {
-        "architecture": {
-            "64bit": {
-                "url": "$REPO_URL/releases/download/v\$version/idgen-windows-amd64.exe"
+    \"autoupdate\": {
+        \"architecture\": {
+            \"64bit\": {
+                \"url\": \"$REPO_URL/releases/download/v\$version/$win\"
             }
         }
     }
-}
-EOF
+}"
 
-    if [ ! -f "$DIST_DIR/idgen.json" ]; then
-        error "Failed to create Scoop manifest"
-        return 1
-    fi
-
-    success "Generated: $DIST_DIR/idgen.json"
-    record_publish "scoop" "$VERSION"
-    echo ""
-
-    # Check for placeholder and warn
-    if grep -q "PLACEHOLDER" "$DIST_DIR/idgen.json"; then
-        warn "Manifest contains placeholder SHA256 hash"
-        echo ""
-        echo -e "${YELLOW}To update hash manually (on Windows):${NC}"
-        suggest_cmd "certutil -hashfile idgen-windows-amd64.exe SHA256"
-        echo ""
-        echo -e "${YELLOW}Or with curl:${NC}"
-        suggest_cmd "curl -sL $RELEASE_URL/idgen-windows-amd64.exe | sha256sum"
-        echo ""
-    fi
-
-    echo -e "${YELLOW}Next steps for Scoop:${NC}"
-    echo "  1. Create a bucket repository: github.com/maniartech/scoop-bucket"
-    echo "  2. Copy idgen.json to the bucket root"
-    echo "  3. Windows users install with:"
-    suggest_cmd "scoop bucket add maniartech https://github.com/maniartech/scoop-bucket"
-    suggest_cmd "scoop install idgen"
+    record_publish "scoop"
+    $placeholder && { echo ""; warn "Manifest contains a placeholder hash — re-run once assets are live."; }
     echo ""
 }
 
-# ============================================================================
-# AUR (Arch Linux)
-# ============================================================================
+# ---------------------------------------------------------------------------
+# AUR
+# ---------------------------------------------------------------------------
 generate_aur() {
-    if should_skip "aur"; then
-        return 0
-    fi
-
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${YELLOW}Generating AUR PKGBUILD...${NC}"
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo "${BOLD}Generating AUR PKGBUILDs${NC}"
     echo ""
 
-    # Check release assets
-    validate_release_exists || warn "Proceeding anyway, but SHA256 hashes will need manual update"
+    local linux
+    linux="$(asset_for 'linux-amd64' || true)"
+    [ -n "$linux" ] || die "The workflow builds no Linux asset — nothing to put in a PKGBUILD."
 
-    # Ensure dist directory exists
-    if ! mkdir -p "$DIST_DIR/aur" 2>/dev/null; then
-        error "Failed to create directory: $DIST_DIR/aur"
-        return 1
-    fi
+    release_assets_available || warn "Release assets are not downloadable yet — hashes will be placeholders"
 
-    # Calculate SHA256 hash
-    local linux_sha="PLACEHOLDER_SHA256"
-    local source_sha="PLACEHOLDER_SHA256"
+    local bin_sha src_sha placeholder=false
+    bin_sha="$(sha256_of_url "$RELEASE_URL/$linux" || true)"
+    src_sha="$(sha256_of_url "$REPO_URL/archive/v$VERSION.tar.gz" || true)"
+    [ -n "$bin_sha" ] || { bin_sha="PLACEHOLDER_SHA256"; placeholder=true; }
+    [ -n "$src_sha" ] || { src_sha="PLACEHOLDER_SHA256"; placeholder=true; }
 
-    if require_command "curl" ""; then
-        info "Downloading Linux binary to calculate SHA256..."
-        local temp_file=$(mktemp 2>/dev/null || echo "/tmp/idgen-linux-$$")
+    local desc maint
+    desc="$(cargo_field '[package]' 'description')"
+    maint="$(cargo_field '[package]' 'authors' || echo 'Maintainer')"
 
-        if curl -sL -o "$temp_file" "$RELEASE_URL/idgen-linux-amd64" 2>/dev/null && [ -s "$temp_file" ]; then
-            linux_sha=$(sha256sum "$temp_file" 2>/dev/null | cut -d' ' -f1 || shasum -a 256 "$temp_file" 2>/dev/null | cut -d' ' -f1)
-            if [ -n "$linux_sha" ] && [ "$linux_sha" != "" ]; then
-                success "Linux binary SHA256: ${linux_sha:0:16}..."
-            fi
-        else
-            warn "Could not download Linux binary"
-        fi
-        rm -f "$temp_file"
-
-        # Try to get source tarball hash
-        info "Downloading source tarball to calculate SHA256..."
-        local source_url="$REPO_URL/archive/v$VERSION.tar.gz"
-        if curl -sL -o "$temp_file" "$source_url" 2>/dev/null && [ -s "$temp_file" ]; then
-            source_sha=$(sha256sum "$temp_file" 2>/dev/null | cut -d' ' -f1 || shasum -a 256 "$temp_file" 2>/dev/null | cut -d' ' -f1)
-            if [ -n "$source_sha" ] && [ "$source_sha" != "" ]; then
-                success "Source tarball SHA256: ${source_sha:0:16}..."
-            fi
-        else
-            warn "Could not download source tarball"
-        fi
-        rm -f "$temp_file"
-    fi
-
-    echo ""
-
-    # Binary package (idgen-bin)
-    cat > "$DIST_DIR/aur/PKGBUILD-bin" << EOF
-# Maintainer: ManiarTech <contact@maniartech.com>
-pkgname=idgen-bin
+    write_file "$DIST_DIR/aur/PKGBUILD-bin" "# Maintainer: $maint
+# Generated by scripts/publish.sh — do not edit by hand.
+pkgname=$BIN_NAME-bin
 pkgver=$VERSION
 pkgrel=1
-pkgdesc="Fast CLI tool for generating and inspecting unique IDs (UUID, NanoID, CUID, ULID, ObjectID)"
+pkgdesc=\"$desc\"
 arch=('x86_64')
-url="https://github.com/maniartech/idgen"
-license=('MIT')
-provides=('idgen')
-conflicts=('idgen')
-source=("\$url/releases/download/v\${pkgver}/idgen-linux-amd64")
-sha256sums=('$linux_sha')
+url=\"$REPO_URL\"
+license=('$(cargo_field '[package]' 'license')')
+provides=('$BIN_NAME')
+conflicts=('$BIN_NAME')
+source=(\"\$url/releases/download/v\\\${pkgver}/$linux\")
+sha256sums=('$bin_sha')
 
 package() {
-    install -Dm755 "\${srcdir}/idgen-linux-amd64" "\${pkgdir}/usr/bin/idgen"
+    install -Dm755 \"\\\${srcdir}/$linux\" \"\\\${pkgdir}/usr/bin/$BIN_NAME\"
 
-    # Generate shell completions
-    "\${pkgdir}/usr/bin/idgen" completions bash > idgen.bash
-    "\${pkgdir}/usr/bin/idgen" completions zsh > _idgen
-    "\${pkgdir}/usr/bin/idgen" completions fish > idgen.fish
+    # Completions are generated by the binary we just installed.
+    \"\\\${pkgdir}/usr/bin/$BIN_NAME\" completions bash > $BIN_NAME.bash
+    \"\\\${pkgdir}/usr/bin/$BIN_NAME\" completions zsh  > _$BIN_NAME
+    \"\\\${pkgdir}/usr/bin/$BIN_NAME\" completions fish > $BIN_NAME.fish
 
-    install -Dm644 idgen.bash "\${pkgdir}/usr/share/bash-completion/completions/idgen"
-    install -Dm644 _idgen "\${pkgdir}/usr/share/zsh/site-functions/_idgen"
-    install -Dm644 idgen.fish "\${pkgdir}/usr/share/fish/vendor_completions.d/idgen.fish"
-}
-EOF
+    install -Dm644 $BIN_NAME.bash \"\\\${pkgdir}/usr/share/bash-completion/completions/$BIN_NAME\"
+    install -Dm644 _$BIN_NAME \"\\\${pkgdir}/usr/share/zsh/site-functions/_$BIN_NAME\"
+    install -Dm644 $BIN_NAME.fish \"\\\${pkgdir}/usr/share/fish/vendor_completions.d/$BIN_NAME.fish\"
+}"
 
-    # Source package (idgen)
-    cat > "$DIST_DIR/aur/PKGBUILD-src" << EOF
-# Maintainer: ManiarTech <contact@maniartech.com>
-pkgname=idgen
+    write_file "$DIST_DIR/aur/PKGBUILD-src" "# Maintainer: $maint
+# Generated by scripts/publish.sh — do not edit by hand.
+pkgname=$BIN_NAME
 pkgver=$VERSION
 pkgrel=1
-pkgdesc="Fast CLI tool for generating and inspecting unique IDs (UUID, NanoID, CUID, ULID, ObjectID)"
+pkgdesc=\"$desc\"
 arch=('x86_64')
-url="https://github.com/maniartech/idgen"
-license=('MIT')
+url=\"$REPO_URL\"
+license=('$(cargo_field '[package]' 'license')')
 makedepends=('rust' 'cargo')
-source=("\$pkgname-\$pkgver.tar.gz::\$url/archive/v\${pkgver}.tar.gz")
-sha256sums=('$source_sha')
+source=(\"\\\$pkgname-\\\$pkgver.tar.gz::\$url/archive/v\\\${pkgver}.tar.gz\")
+sha256sums=('$src_sha')
 
 build() {
-    cd "\$pkgname-\$pkgver"
+    cd \"\\\$pkgname-\\\$pkgver\"
     cargo build --release --locked
 }
 
 package() {
-    cd "\$pkgname-\$pkgver"
-    install -Dm755 "target/release/idgen" "\${pkgdir}/usr/bin/idgen"
+    cd \"\\\$pkgname-\\\$pkgver\"
+    install -Dm755 \"target/release/$BIN_NAME\" \"\\\${pkgdir}/usr/bin/$BIN_NAME\"
 
-    # Generate shell completions
-    "./target/release/idgen" completions bash > idgen.bash
-    "./target/release/idgen" completions zsh > _idgen
-    "./target/release/idgen" completions fish > idgen.fish
+    ./target/release/$BIN_NAME completions bash > $BIN_NAME.bash
+    ./target/release/$BIN_NAME completions zsh  > _$BIN_NAME
+    ./target/release/$BIN_NAME completions fish > $BIN_NAME.fish
 
-    install -Dm644 idgen.bash "\${pkgdir}/usr/share/bash-completion/completions/idgen"
-    install -Dm644 _idgen "\${pkgdir}/usr/share/zsh/site-functions/_idgen"
-    install -Dm644 idgen.fish "\${pkgdir}/usr/share/fish/vendor_completions.d/idgen.fish"
-    install -Dm644 LICENSE "\${pkgdir}/usr/share/licenses/\$pkgname/LICENSE"
-}
-EOF
+    install -Dm644 $BIN_NAME.bash \"\\\${pkgdir}/usr/share/bash-completion/completions/$BIN_NAME\"
+    install -Dm644 _$BIN_NAME \"\\\${pkgdir}/usr/share/zsh/site-functions/_$BIN_NAME\"
+    install -Dm644 $BIN_NAME.fish \"\\\${pkgdir}/usr/share/fish/vendor_completions.d/$BIN_NAME.fish\"
+    install -Dm644 LICENSE \"\\\${pkgdir}/usr/share/licenses/\\\$pkgname/LICENSE\"
+}"
 
-    # .SRCINFO for binary package
-    cat > "$DIST_DIR/aur/.SRCINFO-bin" << EOF
-pkgbase = idgen-bin
-	pkgdesc = Fast CLI tool for generating and inspecting unique IDs (UUID, NanoID, CUID, ULID, ObjectID)
-	pkgver = $VERSION
-	pkgrel = 1
-	url = https://github.com/maniartech/idgen
-	arch = x86_64
-	license = MIT
-	provides = idgen
-	conflicts = idgen
-	source = https://github.com/maniartech/idgen/releases/download/v$VERSION/idgen-linux-amd64
-	sha256sums = $linux_sha
-
-pkgname = idgen-bin
-EOF
-
-    # Check for errors
-    local files_created=0
-    [ -f "$DIST_DIR/aur/PKGBUILD-bin" ] && files_created=$((files_created + 1))
-    [ -f "$DIST_DIR/aur/PKGBUILD-src" ] && files_created=$((files_created + 1))
-    [ -f "$DIST_DIR/aur/.SRCINFO-bin" ] && files_created=$((files_created + 1))
-
-    if [ $files_created -ne 3 ]; then
-        error "Failed to create some AUR files (created $files_created/3)"
-        return 1
-    fi
-
-    success "Generated: $DIST_DIR/aur/PKGBUILD-bin"
-    success "Generated: $DIST_DIR/aur/PKGBUILD-src"
-    success "Generated: $DIST_DIR/aur/.SRCINFO-bin"
-    record_publish "aur" "$VERSION"
+    record_publish "aur"
+    $placeholder && { echo ""; warn "PKGBUILDs contain placeholder hashes — re-run once assets are live."; }
     echo ""
-
-    # Check for placeholder hashes
-    if grep -q "PLACEHOLDER" "$DIST_DIR/aur/PKGBUILD-bin"; then
-        warn "PKGBUILD files contain placeholder SHA256 hashes"
-        echo ""
-        echo -e "${YELLOW}To update hashes:${NC}"
-        suggest_cmd "curl -sL $RELEASE_URL/idgen-linux-amd64 | sha256sum"
-        suggest_cmd "curl -sL $REPO_URL/archive/v$VERSION.tar.gz | sha256sum"
-        echo ""
-    fi
-
-    echo -e "${YELLOW}Next steps for AUR:${NC}"
-    echo "  1. Create AUR account at: https://aur.archlinux.org/register"
-    echo "  2. Set up SSH key for AUR"
-    echo "  3. Clone empty package:"
-    suggest_cmd "git clone ssh://aur@aur.archlinux.org/idgen-bin.git"
-    echo "  4. Copy PKGBUILD-bin as PKGBUILD"
-    echo "  5. Generate .SRCINFO:"
-    suggest_cmd "makepkg --printsrcinfo > .SRCINFO"
-    echo "  6. Commit and push:"
-    suggest_cmd "git add PKGBUILD .SRCINFO && git commit -m 'Initial upload' && git push"
-    echo "  7. Users install with:"
-    suggest_cmd "yay -S idgen-bin"
+    hint "Generate .SRCINFO in the AUR checkout with: makepkg --printsrcinfo > .SRCINFO"
     echo ""
 }
 
-# ============================================================================
-# CARGO BINSTALL METADATA
-# ============================================================================
+# ---------------------------------------------------------------------------
+# binstall
+# ---------------------------------------------------------------------------
 generate_binstall() {
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${YELLOW}Generating cargo-binstall metadata...${NC}"
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo "${BOLD}cargo-binstall metadata${NC}"
     echo ""
-
-    echo -e "${YELLOW}Add this to Cargo.toml [package.metadata.binstall]:${NC}"
+    echo "Add to Cargo.toml to enable 'cargo binstall $CRATE_NAME':"
     echo ""
-    cat << 'EOF'
-[package.metadata.binstall]
-pkg-url = "{ repo }/releases/download/v{ version }/idgen-{ target }{ archive-suffix }"
-pkg-fmt = "bin"
-
-[package.metadata.binstall.overrides.x86_64-pc-windows-msvc]
-pkg-url = "{ repo }/releases/download/v{ version }/idgen-windows-amd64.exe"
-
-[package.metadata.binstall.overrides.x86_64-unknown-linux-musl]
-pkg-url = "{ repo }/releases/download/v{ version }/idgen-linux-amd64"
-
-[package.metadata.binstall.overrides.x86_64-apple-darwin]
-pkg-url = "{ repo }/releases/download/v{ version }/idgen-macos-amd64"
-EOF
-    echo ""
-    echo -e "${GREEN}This enables: cargo binstall idgen${NC}"
+    echo "[package.metadata.binstall]"
+    echo "pkg-fmt = \"bin\""
+    release_assets | while read -r asset; do
+        local target=""
+        case "$asset" in
+            *windows*)     target="x86_64-pc-windows-msvc" ;;
+            *linux-amd64*) target="x86_64-unknown-linux-musl" ;;
+            *macos-amd64*) target="x86_64-apple-darwin" ;;
+            *macos-arm64*) target="aarch64-apple-darwin" ;;
+        esac
+        [ -n "$target" ] || continue
+        echo ""
+        echo "[package.metadata.binstall.overrides.$target]"
+        echo "pkg-url = \"{ repo }/releases/download/v{ version }/$asset\""
+    done
     echo ""
 }
 
-# ============================================================================
-# GENERATE ALL
-# ============================================================================
-generate_all() {
-    echo ""
-    info "Generating package files for all platforms..."
-    echo ""
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+$DRY_RUN && { echo "${BLUE}${BOLD}DRY RUN${NC} ${BLUE}- no files written, nothing published${NC}"; echo ""; }
 
-    local failed=0
-
-    generate_homebrew || failed=$((failed + 1))
-    generate_scoop || failed=$((failed + 1))
-    generate_aur || failed=$((failed + 1))
-    generate_binstall
-
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    if [ $failed -eq 0 ]; then
-        echo -e "${GREEN}✓ All package files generated in: $DIST_DIR/${NC}"
-    else
-        echo -e "${YELLOW}⚠ Generated with $failed error(s): $DIST_DIR/${NC}"
-    fi
-    echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo ""
-
-    if [ -d "$DIST_DIR" ]; then
-        echo -e "${GRAY}Generated files:${NC}"
-        ls -la "$DIST_DIR/" 2>/dev/null || echo "  (directory empty)"
-        if [ -d "$DIST_DIR/aur" ]; then
-            echo ""
-            echo -e "${GRAY}AUR files:${NC}"
-            ls -la "$DIST_DIR/aur/" 2>/dev/null || echo "  (directory empty)"
-        fi
-    fi
-    echo ""
-}
-
-# ============================================================================
-# MAIN
-# ============================================================================
-
-# Parse arguments
-PLATFORM=""
-CHECK_ONLY=false
-
-for arg in "$@"; do
-    case "$arg" in
-        --force)
-            FORCE=true
-            ;;
-        --check)
-            CHECK_ONLY=true
-            ;;
-        --help|-h|help)
-            PLATFORM="help"
-            ;;
-        -*)
-            error "Unknown option: $arg"
-            echo ""
-            show_help
-            exit 1
-            ;;
-        *)
-            if [ -z "$PLATFORM" ]; then
-                PLATFORM="$arg"
-            fi
-            ;;
-    esac
-done
-
-# Default to help if no platform specified
-PLATFORM=${PLATFORM:-help}
-
-# Handle check-only mode
-if [ "$CHECK_ONLY" = true ]; then
-    validate_prerequisites
-    validate_release_exists
-    show_summary
-    exit 0
-fi
-
-# Handle help first (before validation)
-if [ "$PLATFORM" = "help" ] || [ "$PLATFORM" = "--help" ] || [ "$PLATFORM" = "-h" ]; then
-    show_help
-    exit 0
-fi
-
-# Validate prerequisites for all other commands
-validate_prerequisites
-
-case $PLATFORM in
-    crates)
-        publish_crates
-        ;;
-    homebrew)
+case "$PLATFORM" in
+    crates)   publish_crates ;;
+    homebrew) generate_homebrew ;;
+    scoop)    generate_scoop ;;
+    aur)      generate_aur ;;
+    binstall) generate_binstall ;;
+    status)   show_status ;;
+    all)
         generate_homebrew
-        ;;
-    scoop)
         generate_scoop
-        ;;
-    aur)
         generate_aur
-        ;;
-    binstall)
         generate_binstall
         ;;
-    all)
-        generate_all
-        ;;
-    status)
-        show_status
-        ;;
     *)
-        error "Unknown platform: $PLATFORM"
-        echo ""
-        echo -e "${YELLOW}Available platforms:${NC} crates, homebrew, scoop, aur, binstall, all"
-        echo ""
-        echo -e "${GRAY}Run './scripts/publish.sh help' for more information${NC}"
-        exit 1
+        die "Unknown command: $PLATFORM
+$(hint "Valid: crates, homebrew, scoop, aur, binstall, all, status")"
         ;;
 esac
-
-# Show summary at the end
-show_summary
-
-# Exit with error if there were any errors
-if [ ${#ERRORS[@]} -gt 0 ]; then
-    exit 1
-fi
-
-exit 0
