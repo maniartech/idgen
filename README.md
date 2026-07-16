@@ -35,10 +35,10 @@ This tool is designed for developers who need to generate or analyze various typ
   - [ID Types and Use Cases](#id-types-and-use-cases)
     - [UUID (Universal Unique Identifier)](#uuid-universal-unique-identifier)
       - [UUID v1 (Time-based)](#uuid-v1-time-based)
-      - [UUID v4 (Random)](#uuid-v4-random)
-      - [UUID v7 (Time-ordered) — recommended for database keys](#uuid-v7-time-ordered--recommended-for-database-keys)
-      - [UUID v6 (Time-based, sortable)](#uuid-v6-time-based-sortable)
       - [UUID v3/v5 (Name-based)](#uuid-v3v5-name-based)
+      - [UUID v4 (Random)](#uuid-v4-random)
+      - [UUID v6 (Time-based, sortable)](#uuid-v6-time-based-sortable)
+      - [UUID v7 (Time-ordered) — recommended for database keys](#uuid-v7-time-ordered--recommended-for-database-keys)
     - [MongoDB ObjectID](#mongodb-objectid)
     - [NanoID](#nanoid)
     - [CUID (Collision-resistant Unique Identifier)](#cuid-collision-resistant-unique-identifier)
@@ -237,10 +237,21 @@ Standard 128-bit identifiers with multiple versions for different needs:
 - Note: v1 stores its timestamp split across fields, so v1 IDs do **not** sort
   chronologically. If you want sortability, use v7.
 
+#### UUID v3/v5 (Name-based)
+- v3 uses MD5, v5 uses SHA-1 (preferred)
+- Example: `cfbff0d1-9375-5685-968c-48ce8b15ae17`
+- Best for: Consistent IDs from same input, content addressing
+
 #### UUID v4 (Random)
 - Format: Random numbers
 - Example: `550e8400-e29b-44d4-a716-446655440000`
 - Best for: Default choice, session IDs
+
+#### UUID v6 (Time-based, sortable)
+- Format: v1's fields with the timestamp reordered most-significant-first
+- Example: `1f181298-9620-6519-b560-4dff09331797`
+- Best for: Migrating existing v1 data to something sortable
+- For new systems prefer v7 — v6 exists mainly as a v1 upgrade path.
 
 #### UUID v7 (Time-ordered) — recommended for database keys
 - Format: 48-bit Unix millisecond timestamp + 74 random bits
@@ -250,17 +261,6 @@ Standard 128-bit identifiers with multiple versions for different needs:
   ordering both match creation order — so inserts land at the end of a B-tree index
   instead of scattering across it the way v4 does. A drop-in replacement for v4 that
   is friendlier to your indexes, with no configuration or coordination required.
-
-#### UUID v6 (Time-based, sortable)
-- Format: v1's fields with the timestamp reordered most-significant-first
-- Example: `1f181298-9620-6519-b560-4dff09331797`
-- Best for: Migrating existing v1 data to something sortable
-- For new systems prefer v7 — v6 exists mainly as a v1 upgrade path.
-
-#### UUID v3/v5 (Name-based)
-- v3 uses MD5, v5 uses SHA-1 (preferred)
-- Example: `cfbff0d1-9375-5685-968c-48ce8b15ae17`
-- Best for: Consistent IDs from same input, content addressing
 
 ### MongoDB ObjectID
 12-byte identifier combining timestamp, machine ID, and counter:
@@ -336,11 +336,11 @@ Each ID can be formatted in different ways:
 
 ```bash
 # Generate IDs (default: UUID v4)
-idgen                              # Random UUID v4
+idgen                              # Random UUID v4 (default)
 idgen -t uuid1                     # Time-based UUID v1
-idgen -t uuid7                     # Time-ordered UUID v7 (recommended for DB keys)
-idgen -t uuid6                     # Sortable UUID v6 (v1 migration path)
 idgen -t uuid5 --namespace DNS --name example.com  # Name-based UUID v5
+idgen -t uuid6                     # Sortable UUID v6 (v1 migration path)
+idgen -t uuid7                     # Time-ordered UUID v7 (recommended for DB keys)
 
 # v7 IDs sort chronologically, so a plain sort restores creation order
 idgen -t uuid7 -c 5 | sort         # Already in order
