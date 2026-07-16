@@ -1,17 +1,16 @@
 use std::process::Command;
 
-/// Get the path to the idgen binary
-fn idgen_bin() -> std::path::PathBuf {
-    let mut path = std::env::current_exe().unwrap();
-    path.pop(); // Remove test binary name
-    path.pop(); // Remove 'deps' directory
-    path.push("idgen");
-
-    // On Windows, add .exe extension
-    #[cfg(target_os = "windows")]
-    path.set_extension("exe");
-
-    path
+/// Path to the `idgen` binary under test.
+///
+/// Cargo sets `CARGO_BIN_EXE_<name>` for integration tests and points it at the
+/// binary it actually built, including any platform extension.
+///
+/// Deriving the path from `current_exe()` instead — walking up out of `deps/` and
+/// assuming a sibling `idgen` — hardcodes one particular target layout. That breaks
+/// as soon as the build directory moves, e.g. under `build.build-dir` (Cargo 1.91+)
+/// or the new build-dir layout. See issue #2.
+fn idgen_bin() -> &'static str {
+    env!("CARGO_BIN_EXE_idgen")
 }
 
 // ============================================
