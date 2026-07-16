@@ -3,7 +3,7 @@ use clap_complete::Shell;
 
 /// A lightweight, powerful CLI tool for generating and inspecting unique identifiers.
 ///
-/// Supports UUID (v1-v5), NanoID, CUID (v1/v2), ULID, and MongoDB ObjectID.
+/// Supports UUID (v1-v5, v7), NanoID, CUID (v1/v2), ULID, and MongoDB ObjectID.
 #[derive(Parser, Debug)]
 #[command(name = "idgen")]
 #[command(author = "Mohamed Aamir Maniar <aamir.maniar@maniartech.com>")]
@@ -12,6 +12,7 @@ use clap_complete::Shell;
 #[command(after_help = "EXAMPLES:
     idgen                                       Generate a random UUID v4 (default)
     idgen -t uuid1                              Generate a time-based UUID v1
+    idgen -t uuid7                              Generate a time-ordered UUID v7
     idgen -t uuid3 --namespace DNS --name example.com
     idgen -t nanoid -l 10                       Generate a NanoID of length 10
     idgen -t ulid                               Generate a ULID
@@ -106,6 +107,10 @@ pub enum IdType {
     /// UUID version 5 (SHA1 hash-based, requires --namespace and --name)
     #[value(name = "uuid5", alias = "u5")]
     Uuid5,
+
+    /// UUID version 7 (time-ordered)
+    #[value(name = "uuid7", alias = "u7")]
+    Uuid7,
 
     /// NanoID (URL-safe, configurable length)
     #[value(name = "nanoid", alias = "nano")]
