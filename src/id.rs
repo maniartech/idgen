@@ -2,6 +2,7 @@ use bson::oid::ObjectId;
 use cuid;
 use nanoid::nanoid;
 use std::str::FromStr;
+use std::sync::OnceLock;
 use ulid;
 use uuid::Uuid;
 
@@ -95,13 +96,34 @@ pub fn new_id(
     }
 }
 
+/// Returns this process's node ID, used by UUID v1.
+///
+/// The node field disambiguates two hosts that generate a UUID in the same 100ns
+/// tick. RFC 9562 §5.1 permits a random value in place of a MAC address as long as
+/// the multicast bit (the least significant bit of the first octet) is set, which
+/// guarantees it can never collide with a real IEEE 802 address.
+///
+/// Generated once per process, so all v1 IDs from a single run share a node ID and
+/// rely on the clock sequence to disambiguate — the behaviour the spec expects.
+fn node_id() -> &'static [u8; 6] {
+    static NODE_ID: OnceLock<[u8; 6]> = OnceLock::new();
+    NODE_ID.get_or_init(|| {
+        // Bytes 0..6 of a v4 are pure entropy; its version and variant bits live in
+        // bytes 6 and 8. This avoids taking on a separate RNG dependency.
+        let mut node = [0u8; 6];
+        node.copy_from_slice(&Uuid::new_v4().as_bytes()[..6]);
+        node[0] |= 0x01;
+        node
+    })
+}
+
 fn generate_uuid(
     version: UuidVersion,
     namespace: Option<&str>,
     name: Option<&str>,
 ) -> Result<Uuid, IDError> {
     match version {
-        UuidVersion::V1 => Ok(Uuid::now_v1(&[1, 2, 3, 4, 5, 6])),
+        UuidVersion::V1 => Ok(Uuid::now_v1(node_id())),
         UuidVersion::V3 => {
             let namespace = namespace.ok_or_else(||
                 IDError::MissingNamespace("UUID v3 requires --namespace parameter. Example: --namespace 6ba7b810-9dad-11d1-80b4-00c04fd430c8".to_string())

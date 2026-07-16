@@ -1,4 +1,40 @@
 use idgen_cli::id::{new_id, CuidVersion, IDError, IDFormat, UuidVersion};
+use uuid::Uuid;
+
+/// Extracts the 48-bit node field, which occupies the final 6 bytes of a v1 UUID.
+fn node_of(id: &str) -> [u8; 6] {
+    let bytes = *Uuid::parse_str(id).unwrap().as_bytes();
+    bytes[10..16].try_into().unwrap()
+}
+
+// ============================================
+// Node ID Tests (UUID v1)
+// ============================================
+
+#[test]
+fn test_uuid_v1_node_id_is_not_hardcoded() {
+    let id = new_id(&IDFormat::Hyphenated(UuidVersion::V1), None, None, None).unwrap();
+    // Regression: the node ID used to be a hardcoded [1,2,3,4,5,6] shared by every
+    // user of this tool, leaving the clock sequence as the only collision defence.
+    assert_ne!(node_of(&id), [1, 2, 3, 4, 5, 6]);
+}
+
+#[test]
+fn test_uuid_v1_node_id_has_multicast_bit_set() {
+    let id = new_id(&IDFormat::Hyphenated(UuidVersion::V1), None, None, None).unwrap();
+    // RFC 9562 §5.1: a random node ID must set the multicast bit so it can never
+    // be mistaken for, or collide with, a real IEEE 802 MAC address.
+    assert_eq!(node_of(&id)[0] & 0x01, 0x01);
+}
+
+#[test]
+fn test_uuid_v1_node_id_is_stable_within_process() {
+    let a = new_id(&IDFormat::Hyphenated(UuidVersion::V1), None, None, None).unwrap();
+    let b = new_id(&IDFormat::Hyphenated(UuidVersion::V1), None, None, None).unwrap();
+    // One node ID per process — per RFC, the clock sequence (not the node)
+    // disambiguates IDs originating from the same host.
+    assert_eq!(node_of(&a), node_of(&b));
+}
 
 // ============================================
 // UUID v4 Tests
