@@ -18,6 +18,115 @@ Check where things stand at any point:
 ./scripts/publish.sh status
 ```
 
+## Doing a release, start to finish
+
+The full walkthrough. Replace `X.Y.Z` with the version you are releasing.
+
+Only one step in here cannot be undone — step 6. Everything before it is
+recoverable, and every step is safe to re-run.
+
+### 1. Get master pushed and clean
+
+```bash
+cd /path/to/idgen
+git status                 # must be clean
+git push origin master     # release.sh will not run against an unpushed master
+```
+
+`release.sh` refuses to run with uncommitted changes or a master that has
+diverged from origin. Both checks exist so the tag you push corresponds to
+something other people can actually fetch.
+
+### 2. Dry run
+
+```bash
+./scripts/release.sh X.Y.Z --dry-run
+```
+
+Changes nothing — no edits, no commits, no tags, no pushes. It prints each step
+prefixed with `would run:` so you can see the plan.
+
+If the version in `Cargo.toml` is already `X.Y.Z` (say you bumped it by hand in
+an earlier PR), step 4 reports *"Already at X.Y.Z — nothing to change"*. That is
+expected, not a problem.
+
+### 3. Release
+
+```bash
+./scripts/release.sh X.Y.Z
+```
+
+Runs the tests with `--locked`, sets and commits the version if needed, pushes
+master, then creates and pushes the `vX.Y.Z` tag. Pushing the tag is what
+triggers the build.
+
+If it fails partway — a test breaks, the network drops — fix the cause and run
+the exact same command again. It picks up from wherever it got to.
+
+### 4. Wait for the build
+
+```bash
+gh run watch                      # or: <repo>/actions
+```
+
+Takes roughly 5-10 minutes and produces four binaries: Linux, Windows, macOS
+Intel, and macOS Apple Silicon.
+
+**Do not skip ahead to step 7.** The manifests download these assets to compute
+their SHA256 hashes, so they have to exist first.
+
+If a build fails here, you have a pushed tag with an incomplete release. Fix the
+cause and cut a *new* patch version — do not move the tag (see
+[Tag conflicts](#tag-conflicts-are-not-resolved-for-you)).
+
+### 5. Release notes
+
+The workflow creates the GitHub Release automatically. Attach notes to it:
+
+```bash
+gh release edit vX.Y.Z --notes-file notes.md
+```
+
+Or edit in the browser at `<repo>/releases/tag/vX.Y.Z`. See
+[Version numbers](#version-numbers) for what has to be called out — anything
+that changes generated output belongs here, prominently.
+
+### 6. Publish to crates.io
+
+```bash
+./scripts/publish.sh crates
+```
+
+Checks the registry, validates with `cargo publish --dry-run --locked`, then
+**prompts for confirmation**. Nothing is uploaded until you answer `y`.
+
+**This is the point of no return.** A version on crates.io can be yanked but
+never replaced or re-uploaded. Everything up to here can be redone; this cannot.
+
+Needs `cargo login` once, with a token from <https://crates.io/me> carrying the
+`publish-new` and `publish-update` scopes.
+
+### 7. Regenerate the package manifests
+
+```bash
+./scripts/publish.sh all
+```
+
+Writes the Homebrew formula, Scoop manifest, AUR PKGBUILDs, and binstall
+metadata into `dist/packages/` (gitignored). Nothing is published — copy them
+into your tap, bucket, or AUR checkout yourself.
+
+If you see `PLACEHOLDER_SHA256` in the output, the assets were not downloadable
+yet. Wait and re-run; the hashes fill in. Never hand-edit a placeholder.
+
+### 8. Confirm
+
+```bash
+./scripts/publish.sh status
+```
+
+Expect: published on crates.io, tagged in git, assets available.
+
 ## Everything is idempotent
 
 Both scripts are safe to re-run. If one fails halfway — a dropped connection, a
@@ -60,9 +169,10 @@ scripts read from there. Consequences worth knowing:
   formula advertised an `idgen-macos-arm64` asset that was never built, so every
   Apple Silicon install failed against a 404.
 
-## Release, step by step
+## What release.sh does internally
 
-`./scripts/release.sh <version>` does the following, each step re-runnable:
+Reference for the seven steps inside the script — distinct from the walkthrough
+above, which is what *you* run. Each is re-runnable:
 
 1. **Branch** — must be on `master`.
 2. **Clean tree** — refuses to release uncommitted work.
