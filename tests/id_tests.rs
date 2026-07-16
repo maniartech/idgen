@@ -36,6 +36,77 @@ fn test_uuid_v1_node_id_is_stable_within_process() {
     assert_eq!(node_of(&a), node_of(&b));
 }
 
+#[test]
+fn test_uuid_v6_node_id_has_multicast_bit_set() {
+    let id = new_id(&IDFormat::Hyphenated(UuidVersion::V6), None, None, None).unwrap();
+    assert_eq!(node_of(&id)[0] & 0x01, 0x01);
+}
+
+#[test]
+fn test_uuid_v1_and_v6_share_the_process_node_id() {
+    let v1 = new_id(&IDFormat::Hyphenated(UuidVersion::V1), None, None, None).unwrap();
+    let v6 = new_id(&IDFormat::Hyphenated(UuidVersion::V6), None, None, None).unwrap();
+    assert_eq!(node_of(&v1), node_of(&v6));
+}
+
+// ============================================
+// UUID v6 Tests (Time-based, sortable)
+// ============================================
+
+#[test]
+fn test_uuid_v6_simple() {
+    let id = new_id(&IDFormat::Simple(UuidVersion::V6), None, None, None).unwrap();
+    assert_eq!(id.len(), 32);
+    assert!(!id.contains('-'));
+    assert_eq!(Uuid::parse_str(&id).unwrap().get_version_num(), 6);
+}
+
+#[test]
+fn test_uuid_v6_hyphenated() {
+    let id = new_id(&IDFormat::Hyphenated(UuidVersion::V6), None, None, None).unwrap();
+    assert_eq!(id.len(), 36);
+    assert_eq!(id.matches('-').count(), 4);
+    assert_eq!(Uuid::parse_str(&id).unwrap().get_version_num(), 6);
+}
+
+#[test]
+fn test_uuid_v6_urn() {
+    let id = new_id(&IDFormat::URN(UuidVersion::V6), None, None, None).unwrap();
+    assert!(id.starts_with("urn:uuid:"));
+    assert_eq!(id.len(), 45);
+}
+
+#[test]
+fn test_uuid_v6_variant_is_rfc4122() {
+    let id = new_id(&IDFormat::Hyphenated(UuidVersion::V6), None, None, None).unwrap();
+    assert_eq!(
+        Uuid::parse_str(&id).unwrap().get_variant(),
+        uuid::Variant::RFC4122
+    );
+}
+
+#[test]
+fn test_uuid_v6_is_lexicographically_sortable() {
+    // The whole point of v6 over v1: string order == chronological order.
+    let ids: Vec<String> = (0..5)
+        .map(|_| {
+            let id = new_id(&IDFormat::Hyphenated(UuidVersion::V6), None, None, None).unwrap();
+            std::thread::sleep(std::time::Duration::from_millis(2));
+            id
+        })
+        .collect();
+    let mut sorted = ids.clone();
+    sorted.sort();
+    assert_eq!(ids, sorted);
+}
+
+#[test]
+fn test_uuid_v6_uniqueness() {
+    let a = new_id(&IDFormat::Hyphenated(UuidVersion::V6), None, None, None).unwrap();
+    let b = new_id(&IDFormat::Hyphenated(UuidVersion::V6), None, None, None).unwrap();
+    assert_ne!(a, b);
+}
+
 // ============================================
 // UUID v4 Tests
 // ============================================

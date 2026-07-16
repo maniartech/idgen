@@ -117,6 +117,7 @@ fn build_id_format(cli: &Cli) -> Result<(IDFormat, Option<String>, Option<String
         IdType::Uuid3 => Some(UuidVersion::V3),
         IdType::Uuid4 => Some(UuidVersion::V4),
         IdType::Uuid5 => Some(UuidVersion::V5),
+        IdType::Uuid6 => Some(UuidVersion::V6),
         IdType::Uuid7 => Some(UuidVersion::V7),
         _ => None,
     };
@@ -158,7 +159,12 @@ fn build_id_format(cli: &Cli) -> Result<(IDFormat, Option<String>, Option<String
     };
 
     let format = match cli.id_type {
-        IdType::Uuid1 | IdType::Uuid3 | IdType::Uuid4 | IdType::Uuid5 | IdType::Uuid7 => {
+        IdType::Uuid1
+        | IdType::Uuid3
+        | IdType::Uuid4
+        | IdType::Uuid5
+        | IdType::Uuid6
+        | IdType::Uuid7 => {
             let version = uuid_version.unwrap();
             match cli.format {
                 UuidFormat::Simple => IDFormat::Simple(version),

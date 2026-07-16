@@ -48,6 +48,7 @@ pub enum UuidVersion {
     V3,
     V4,
     V5,
+    V6,
     V7,
 }
 
@@ -96,15 +97,15 @@ pub fn new_id(
     }
 }
 
-/// Returns this process's node ID, used by UUID v1.
+/// Returns this process's node ID, used by UUID v1 and v6.
 ///
 /// The node field disambiguates two hosts that generate a UUID in the same 100ns
 /// tick. RFC 9562 §5.1 permits a random value in place of a MAC address as long as
 /// the multicast bit (the least significant bit of the first octet) is set, which
 /// guarantees it can never collide with a real IEEE 802 address.
 ///
-/// Generated once per process, so all v1 IDs from a single run share a node ID and
-/// rely on the clock sequence to disambiguate — the behaviour the spec expects.
+/// Generated once per process, so all v1/v6 IDs from a single run share a node ID
+/// and rely on the clock sequence to disambiguate — the behaviour the spec expects.
 fn node_id() -> &'static [u8; 6] {
     static NODE_ID: OnceLock<[u8; 6]> = OnceLock::new();
     NODE_ID.get_or_init(|| {
@@ -153,6 +154,7 @@ fn generate_uuid(
             )?;
             Ok(Uuid::new_v5(&namespace, name.as_bytes()))
         }
+        UuidVersion::V6 => Ok(Uuid::now_v6(node_id())),
         UuidVersion::V7 => Ok(Uuid::now_v7()),
     }
 }

@@ -29,6 +29,7 @@ uuid = { version = "1.18.1", features = [
     "v3",
     "v4",
     "v5",
+    "v6",
     "v7",
     "md5",
     "sha1",

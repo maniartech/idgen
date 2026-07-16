@@ -3,7 +3,7 @@ use clap_complete::Shell;
 
 /// A lightweight, powerful CLI tool for generating and inspecting unique identifiers.
 ///
-/// Supports UUID (v1-v5, v7), NanoID, CUID (v1/v2), ULID, and MongoDB ObjectID.
+/// Supports UUID (v1-v7), NanoID, CUID (v1/v2), ULID, and MongoDB ObjectID.
 #[derive(Parser, Debug)]
 #[command(name = "idgen")]
 #[command(author = "Mohamed Aamir Maniar <aamir.maniar@maniartech.com>")]
@@ -107,6 +107,10 @@ pub enum IdType {
     /// UUID version 5 (SHA1 hash-based, requires --namespace and --name)
     #[value(name = "uuid5", alias = "u5")]
     Uuid5,
+
+    /// UUID version 6 (time-based, sortable — v1 reordered; prefer v7 for new systems)
+    #[value(name = "uuid6", alias = "u6")]
+    Uuid6,
 
     /// UUID version 7 (time-ordered)
     #[value(name = "uuid7", alias = "u7")]
