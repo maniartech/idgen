@@ -1,0 +1,7 @@
+# Normalise all text files to LF in the repository and in the working tree.
+#
+# Without this, editing on Windows can silently rewrite a whole file to CRLF,
+# turning a small change into a whole-file diff that destroys `git blame`.
+# `eol=lf` also keeps the shell scripts under scripts/ executable — CRLF line
+# endings break their shebang.
+* text=auto eol=lf
