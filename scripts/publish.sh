@@ -73,7 +73,9 @@ done
 PLATFORM="${PLATFORM:-help}"
 
 show_help() {
-    sed -n '2,46p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    # Print the header comment block, however long it grows. A fixed line range
+    # silently truncates the moment someone edits the header.
+    awk 'NR>1 { if (/^#/) { sub(/^# ?/, ""); print } else { exit } }' "${BASH_SOURCE[0]}"
     echo "Current state:"
     echo "  crate:    $CRATE_NAME"
     echo "  binary:   $BIN_NAME"

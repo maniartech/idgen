@@ -10,7 +10,7 @@
 #   ./scripts/release.sh 1.5.0 --dry-run   # show what would happen, change nothing
 #
 # WHAT IT DOES
-#   1. Validates the version, the branch, and the working tree
+#   1. Validates the version, the branch, the working tree, and the release notes
 #   2. Syncs with origin/master
 #   3. Sets the version in Cargo.toml (if it isn't already)
 #   4. Runs the full test suite against the exact lockfile that will ship
@@ -53,14 +53,26 @@
 # Tests run with `--locked`, which fails if Cargo.lock is out of date rather
 # than quietly rewriting it. What you test is exactly what you ship.
 #
+# RELEASE NOTES ARE REQUIRED
+# --------------------------
+# Write docs/release/vX.Y.Z.md and commit it *before* releasing. This script
+# refuses to tag without it, at step 3, before anything is changed or pushed.
+#
+# The workflow feeds that file to the GitHub Release via `body_path`, so the
+# notes are published automatically and are read from the tagged commit — the
+# notes always describe exactly the code being released. Previously nothing
+# passed a body at all: every Release was created empty and relied on someone
+# remembering to paste notes in afterwards.
+#
 # PREREQUISITES
 #   - On master, working tree clean, push access
 #   - Cargo.lock committed and in sync with Cargo.toml
+#   - docs/release/vX.Y.Z.md written and committed
 #
 # AFTER RUNNING
 #   1. Watch the build:   <repo>/actions   (~5-10 min)
-#   2. Edit release notes: <repo>/releases/tag/vX.Y.Z
-#   3. Publish to crates.io: ./scripts/publish.sh crates
+#   2. Publish to crates.io: ./scripts/publish.sh crates
+#   3. Regenerate manifests: ./scripts/publish.sh all
 
 set -euo pipefail
 
@@ -80,7 +92,9 @@ for arg in "$@"; do
         --dry-run) DRY_RUN=true ;;
         --force)   FORCE=true ;;
         --help|-h)
-            sed -n '2,60p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+            # Print the header comment block, however long it grows. A fixed
+            # line range silently truncates the moment someone edits the header.
+            awk 'NR>1 { if (/^#/) { sub(/^# ?/, ""); print } else { exit } }' "${BASH_SOURCE[0]}"
             exit 0
             ;;
         -*) die "Unknown option: $arg (try --help)" ;;
@@ -120,9 +134,9 @@ run() {
 }
 
 # ---------------------------------------------------------------------------
-# [1/7] Branch
+# [1/8] Branch
 # ---------------------------------------------------------------------------
-echo "${YELLOW}[1/7] Checking branch...${NC}"
+echo "${YELLOW}[1/8] Checking branch...${NC}"
 BRANCH="$(git branch --show-current)"
 if [ "$BRANCH" != "master" ]; then
     die "Must be on master (currently on '$BRANCH')
@@ -131,9 +145,9 @@ fi
 success "On master"
 
 # ---------------------------------------------------------------------------
-# [2/7] Clean tree
+# [2/8] Clean tree
 # ---------------------------------------------------------------------------
-echo "${YELLOW}[2/7] Checking working directory...${NC}"
+echo "${YELLOW}[2/8] Checking working directory...${NC}"
 if [ -n "$(git status --porcelain)" ]; then
     echo ""
     git status --short
@@ -143,9 +157,42 @@ fi
 success "Working directory clean"
 
 # ---------------------------------------------------------------------------
-# [3/7] Sync with origin
+# [3/8] Release notes
 # ---------------------------------------------------------------------------
-echo "${YELLOW}[3/7] Syncing with origin...${NC}"
+# Checked here — before the version is touched, before anything is pushed —
+# because the whole point is to fail while failing is still free.
+#
+# The release workflow reads this file with `body_path` to populate the GitHub
+# Release. If it is missing, the tag still pushes, the binaries still build, and
+# you get a published Release with an empty body that someone has to notice and
+# fix by hand. That is exactly the kind of "remember to do the thing" step this
+# script exists to remove.
+echo "${YELLOW}[3/8] Checking release notes...${NC}"
+NOTES_FILE="$REPO_ROOT/docs/release/$TAG.md"
+if [ ! -f "$NOTES_FILE" ]; then
+    die "No release notes at docs/release/$TAG.md
+$(hint "The workflow reads this file to populate the GitHub Release body.")
+$(hint "Write it and commit it before releasing — the notes should ship in the")
+$(hint "tagged commit, so they describe exactly the code being released.")"
+fi
+if [ ! -s "$NOTES_FILE" ]; then
+    die "docs/release/$TAG.md is empty."
+fi
+# The notes must be committed, not just present on disk: the workflow checks out
+# the tag and reads the file from there, so an uncommitted file is invisible to
+# it. The clean-tree check above catches modifications, but not a brand-new
+# untracked file.
+if ! git ls-files --error-unmatch "$NOTES_FILE" >/dev/null 2>&1; then
+    die "docs/release/$TAG.md exists but is not tracked by git.
+$(hint "The workflow reads it from the tagged commit, so it must be committed:")
+$(hint "git add docs/release/$TAG.md && git commit -m 'docs: add $TAG release notes'")"
+fi
+success "Release notes found ($(wc -l < "$NOTES_FILE" | tr -d ' ') lines)"
+
+# ---------------------------------------------------------------------------
+# [4/8] Sync with origin
+# ---------------------------------------------------------------------------
+echo "${YELLOW}[4/8] Syncing with origin...${NC}"
 run "git fetch" git fetch --quiet origin
 if ! $DRY_RUN; then
     # --ff-only: if master and origin/master have diverged, stop. Cutting a
@@ -159,7 +206,7 @@ success "Up to date with origin/master"
 # ---------------------------------------------------------------------------
 # [4/7] Version (idempotent)
 # ---------------------------------------------------------------------------
-echo "${YELLOW}[4/7] Setting version in Cargo.toml...${NC}"
+echo "${YELLOW}[5/8] Setting version in Cargo.toml...${NC}"
 if [ "$VERSION" = "$TARGET_VERSION" ]; then
     # Already correct — someone bumped it by hand, or a previous run of this
     # script got this far before failing. Either way there is nothing to do,
@@ -183,7 +230,7 @@ fi
 # ---------------------------------------------------------------------------
 # [5/7] Tests
 # ---------------------------------------------------------------------------
-echo "${YELLOW}[5/7] Running tests (--locked, this may take a moment)...${NC}"
+echo "${YELLOW}[6/8] Running tests (--locked, this may take a moment)...${NC}"
 if $DRY_RUN; then
     echo "${GRAY}   would run: cargo test --locked${NC}"
 else
@@ -206,7 +253,7 @@ fi
 # ---------------------------------------------------------------------------
 # [6/7] Commit + push (idempotent)
 # ---------------------------------------------------------------------------
-echo "${YELLOW}[6/7] Committing and pushing...${NC}"
+echo "${YELLOW}[7/8] Committing and pushing...${NC}"
 if ! $DRY_RUN; then
     git add Cargo.toml Cargo.lock
     if git diff --cached --quiet; then
@@ -228,7 +275,7 @@ fi
 # ---------------------------------------------------------------------------
 # [7/7] Tag (idempotent, and refuses to move an existing tag)
 # ---------------------------------------------------------------------------
-echo "${YELLOW}[7/7] Tagging $TAG...${NC}"
+echo "${YELLOW}[8/8] Tagging $TAG...${NC}"
 HEAD_SHA="$(git rev-parse HEAD)"
 LOCAL_TAG_SHA="$(git rev-parse -q --verify "refs/tags/$TAG^{commit}" 2>/dev/null || true)"
 REMOTE_TAG_SHA="$(git ls-remote --tags origin "refs/tags/$TAG^{}" 2>/dev/null | awk '{print $1}' | head -1)"
@@ -296,8 +343,12 @@ echo "GitHub Actions is building:"
 release_assets | sed 's/^/  - /'
 echo ""
 echo "Next:"
-echo "  1. Watch the build:    $REPO_URL/actions"
-echo "  2. Edit release notes: $REPO_URL/releases/tag/$TAG"
-echo "  3. Publish to crates.io once the build is green:"
+echo "  1. Watch the build:  $REPO_URL/actions"
+echo "  2. Once green, publish to crates.io:"
 hint "./scripts/publish.sh crates"
+echo "  3. Regenerate the package manifests:"
+hint "./scripts/publish.sh all"
+echo ""
+echo "${GRAY}Release notes are published automatically from docs/release/$TAG.md${NC}"
+echo "${GRAY}Review them at: $REPO_URL/releases/tag/$TAG${NC}"
 echo ""

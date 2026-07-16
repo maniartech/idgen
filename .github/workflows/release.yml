@@ -63,5 +63,14 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: ${{ matrix.asset_name }}
+          # Release notes are a committed artefact, read from the tagged commit
+          # itself — so the notes always describe exactly the code being
+          # released. Previously nothing passed a body here and every Release
+          # was created empty, relying on someone remembering to paste notes in
+          # afterwards. release.sh now refuses to tag if this file is missing.
+          body_path: docs/release/${{ github.ref_name }}.md
+          # Each matrix job runs this step; without fail_on_unmatched_files the
+          # body would be silently blanked if the path were ever wrong.
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
