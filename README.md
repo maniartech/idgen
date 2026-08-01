@@ -13,6 +13,8 @@ A lightweight command-line utility for generating and inspecting various types o
 
 This tool is designed for developers who need to generate or analyze various types of IDs during development, testing, debugging, or data migration.
 
+<img width="816" height="512" alt="idgen" valign="center" src="https://github.com/user-attachments/assets/832bed5e-d394-4796-acbc-4cd6c25c8691" />
+
 ## Table of Contents
 - [idgen](#idgen)
   - [Table of Contents](#table-of-contents)
