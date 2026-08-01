@@ -114,14 +114,18 @@ sudo mv idgen-linux-amd64 /usr/local/bin/idgen
 
 ## Quick Start
 
-Generate a random UUID (v4):
+Generate a random UUID (v4) — the default:
+
 ```bash
-idgen
+$ idgen
+068ad2a8-9d7b-436d-9612-83895b663b4a
 ```
 
-Generate with banner:
+Generate a sortable UUID (v7) — recommended for database keys:
+
 ```bash
-idgen -b
+$ idgen -t uuid7
+019fbcd9-0d34-75ae-961d-a310e0ab46a3
 ```
 
 Generate multiple IDs:
