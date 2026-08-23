@@ -424,4 +424,4 @@ We welcome contributions! Please feel free to submit a Pull Request. For major c
 
 ## License
 
-MIT License - Copyright © 2021-2025 [ManiarTech®](https://www.maniartech.com/)
+MIT License - Copyright © 2021-2026 [ManiarTech®](https://www.maniartech.com/)
